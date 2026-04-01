@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Chip Poker | Игра на USDT</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #1a472a 0%, #0e2a1a 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+            padding: 12px;
+        }
+        
+        /* WELCOME SCREEN */
+        #welcomeScreen {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            background: linear-gradient(135deg, #1a472a 0%, #0e2a1a 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', sans-serif;
+            color: white;
+            padding: 24px;
+        }
+        
+        .welcome-card {
+            background: rgba(0,0,0,0.6);
+            border-radius: 32px;
+            padding: 32px 28px;
+            text-align: center;
+            border: 1px solid rgba(255,215,0,0.3);
+            max-width: 360px;
+            width: 100%;
+            backdrop-filter: blur(10px);
+        }
+        
+        .tg-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ffd966, #e67e22);
+            margin: 0 auto 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 36px;
+        }
+        
+        .tg-name {
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        
+        .welcome-text {
+            color: #aaa;
+            font-size: 13px;
+            margin-bottom: 24px;
+        }
+        
+        .balance-card {
+            background: rgba(255,215,0,0.1);
+            border-radius: 16px;
+            padding: 14px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255,215,0,0.2);
+        }
+        
+        .balance-label {
+            font-size: 13px;
+            color: #aaa;
+        }
+        
+        .balance-amount {
+            font-size: 28px;
+            font-weight: bold;
+            color: #ffd966;
+        }
+        
+        .play-btn {
+            width: 100%;
+            padding: 14px;
+            font-size: 17px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #ffd966, #e67e22);
+            color: #1a472a;
+            border: none;
+            border-radius: 60px;
+            cursor: pointer;
+        }
+        
+        .buy-stars-btn {
+            background: none;
+            border: 1px solid rgba(255,215,0,0.4);
+            color: #ffd966;
+            padding: 10px 24px;
+            border-radius: 60px;
+            font-size: 14px;
+            cursor: pointer;
+            margin-top: 16px;
+        }
+        
+        .poker-table {
+            width: 100%;
+            max-width: 1300px;
+            background: radial-gradient(ellipse at center, #2c5e3a 0%, #1a3a2a 100%);
+            border-radius: 60px;
+            border: 12px solid #8b5a2b;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.1);
+            padding: 20px;
+            position: relative;
+        }
+        
+        /* Status bar */
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .wallet-status {
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(8px);
+            padding: 8px 18px;
+            border-radius: 40px;
+            color: white;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: 0.2s;
+            border: 1px solid rgba(255,215,0,0.3);
+        }
+        
+        .game-status {
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(8px);
+            padding: 8px 18px;
+            border-radius: 40px;
+            color: #ffd966;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        /* Players */
+        .players-top {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+        
+        .player-card {
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(8px);
+            border-radius: 28px;
+            padding: 10px 16px;
+            text-align: center;
+            color: white;
+            min-width: 110px;
+            border: 1px solid rgba(255,215,0,0.4);
+            transition: all 0.2s;
+        }
+        
+        .player-card.active {
+            border: 2px solid #ffaa00;
+            box-shadow: 0 0 15px rgba(255,170,0,0.6);
+            transform: scale(1.02);
+            background: rgba(0,0,0,0.85);
+        }
+        
+        .player-name {
+            font-weight: bold;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+        
+        .player-stack {
+            color: #ffd966;
+            font-size: 12px;
+        }
+        
+        .player-stack span {
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .player-cards {
+            display: flex;
+            justify-content: center;
+            gap: 4px;
+            margin-top: 6px;
+        }
+        
+        .mini-card {
+            width: 32px;
+            height: 44px;
+            background: white;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: bold;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+        
+        /* Table center */
+        .table-center {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .community-cards {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .card {
+            width: 70px;
+            height: 98px;
+            background: white;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 2px 4px 10px rgba(0,0,0,0.3);
+            transition: transform 0.15s;
+        }
+        
+        .card-rank {
+            font-size: 36px;
+            font-weight: bold;
+        }
+        
+        .card-suit {
+            font-size: 32px;
+        }
+        
+        .red { color: #e74c3c; }
+        .black { color: #2c3e50; }
+        
+        .pot-info {
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(8px);
+            display: inline-block;
+            padding: 8px 24px;
+            border-radius: 60px;
+            margin: 8px auto;
+        }
+        
+        .pot-amount {
+            font-size: 26px;
+            font-weight: bold;
+            color: #ffd966;
+        }
+        
+        .rake-info {
+            font-size: 13px;
+            color: #ffaa66;
+        }
+        
+        /* Your hand */
+        .your-section {
+            background: rgba(0,0,0,0.4);
+            border-radius: 32px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+        
+        .your-hand {
+            display: flex;
+            justify-content: center;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+        
+        .your-info {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #ffd966;
+        }
+        
+        /* Actions */
+        .actions {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: bold;
+            border: none;
+            border-radius: 60px;
+            cursor: pointer;
+            transition: transform 0.08s, opacity 0.2s;
+            font-family: inherit;
+            touch-action: manipulation;
+        }
+        
+        button:active {
+            transform: scale(0.94);
+        }
+        
+        .fold { background: #c0392b; color: white; }
+        .call { background: #2980b9; color: white; }
+        .raise { background: #27ae60; color: white; }
+        .allin { background: #e67e22; color: white; }
+        .join { background: #1abc9c; color: white; font-size: 16px; }
+        .start { background: #8e44ad; color: white; font-size: 16px; }
+        
+        .winner-announce {
+            background: linear-gradient(135deg, #ffd966, #ffaa00);
+            color: #1a472a;
+            padding: 12px 20px;
+            border-radius: 60px;
+            font-weight: bold;
+            margin-top: 16px;
+            text-align: center;
+            font-size: 16px;
+        }
+        
+        @media (max-width: 700px) {
+            .poker-table { padding: 12px; border-radius: 40px; }
+            .card { width: 55px; height: 78px; }
+            .card-rank { font-size: 28px; }
+            .card-suit { font-size: 24px; }
+            button { padding: 10px 18px; font-size: 13px; }
+            .player-card { min-width: 85px; padding: 6px 10px; }
+            .player-name { font-size: 11px; }
+            .pot-amount { font-size: 22px; }
+        }
+        
+        @media (max-width: 480px) {
+            .card { width: 48px; height: 68px; }
+            .card-rank { font-size: 24px; }
+            .card-suit { font-size: 20px; }
+            .mini-card { width: 26px; height: 38px; font-size: 11px; }
+        }
+    </style>
+</head>
+<body>
+    <!-- WELCOME SCREEN -->
+    <div id="welcomeScreen">
+        <div class="welcome-card">
+            <div id="tgAvatar" class="tg-avatar">🃏</div>
+            <div id="tgName" class="tg-name">Игрок</div>
+            <div class="welcome-text">Добро пожаловать в Chip Poker!</div>
+            <div class="balance-card">
+                <div class="balance-label">Твой баланс</div>
+                <div class="balance-amount">⭐ <span id="starsBalance">1000</span></div>
+            </div>
+            <button class="play-btn" onclick="enterGame()">🎮 Играть</button>
+            <div>
+                <button class="buy-stars-btn" onclick="buyStars(100)">⭐ Пополнить Stars</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- POKER TABLE -->
+    <div class="poker-table" style="display: none;" id="pokerTable">
+        <div class="status-bar">
+            <div class="wallet-status" id="walletStatus">🔌 Подключить кошелёк</div>
+            <div class="game-status" id="gameStatus">🎴 Ожидание игроков</div>
+        </div>
+        
+        <div class="players-top" id="playersTop"></div>
+        
+        <div class="table-center">
+            <div class="community-cards" id="communityCards"></div>
+            <div class="pot-info">
+                <div>🏆 БАНК 🏆</div>
+                <div class="pot-amount" id="potAmount">0</div>
+                <div class="rake-info" id="rakeInfo">💰 Рейк (5%): 0 USDT</div>
+            </div>
+        </div>
+        
+        <div class="your-section">
+            <div class="your-hand" id="yourHand"></div>
+            <div class="your-info" id="yourInfo">👤 Присоединись к игре</div>
+        </div>
+        
+        <div class="actions" id="actions">
+            <button class="join" id="joinBtn">🎮 Присоединиться</button>
+            <button class="start" id="startBtn">▶ Начать игру</button>
+        </div>
+        
+        <div id="winnerAnnounce" class="winner-announce" style="display: none;"></div>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        
+        let myId = null;
+        let myPlayer = null;
+        let gameState = null;
+        
+        const suits = { 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣', 'spades': '♠' };
+        const suitColors = { 'hearts': 'red', 'diamonds': 'red', 'clubs': 'black', 'spades': 'black' };
+        
+        // Получаем данные из Telegram WebApp
+        const tg = window.Telegram?.WebApp;
+        if (tg) {
+            tg.ready();
+            tg.expand();
+            const user = tg.initDataUnsafe?.user;
+            if (user) {
+                document.getElementById('tgName').innerText = user.first_name + (user.last_name ? ' ' + user.last_name : '');
+                if (user.photo_url) {
+                    document.getElementById('tgAvatar').innerHTML = `<img src="${user.photo_url}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;">`;
+                }
+            }
+        }
+        
+        function enterGame() {
+            const name = tg?.initDataUnsafe?.user?.first_name || `Игрок${Math.floor(Math.random()*1000)}`;
+            document.getElementById('welcomeScreen').style.display = 'none';
+            document.getElementById('pokerTable').style.display = 'block';
+            socket.emit('joinGame', { name });
+        }
+        
+        function buyStars(amount = 100) {
+            fetch('/create-invoice', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ amount })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.invoiceLink && tg) tg.openInvoice(data.invoiceLink);
+            });
+        }
+        
+        function createCardElement(rank, suit) {
+            const card = document.createElement('div');
+            card.className = 'card';
+            const colorClass = suitColors[suit] || 'black';
+            card.innerHTML = `
+                <div class="card-rank ${colorClass}">${rank}</div>
+                <div class="card-suit ${colorClass}">${suits[suit] || suit}</div>
+            `;
+            return card;
+        }
+        
+        function updateUI(state) {
+            gameState = state;
+            if (!state) return;
+            
+            document.getElementById('potAmount').innerText = state.pot.toLocaleString();
+            const rawRake = state.pot * 5 / 100;
+            const finalRake = Math.min(rawRake, 3);
+            document.getElementById('rakeInfo').innerHTML = `💰 Рейк (5%): ${finalRake.toFixed(2)} USDT`;
+            
+            const communityDiv = document.getElementById('communityCards');
+            communityDiv.innerHTML = '';
+            if (state.communityCards) {
+                state.communityCards.forEach(card => {
+                    if (card && card.rank) communityDiv.appendChild(createCardElement(card.rank, card.suit));
+                });
+            }
+            
+            const playersDiv = document.getElementById('playersTop');
+            playersDiv.innerHTML = '';
+            if (state.players) {
+                state.players.forEach((player, idx) => {
+                    const div = document.createElement('div');
+                    div.className = 'player-card';
+                    if (state.activePlayer === idx && state.status === 'playing') div.classList.add('active');
+                    
+                    let cardsHtml = '';
+                    if (player.cards && player.cards.length) {
+                        cardsHtml = '<div class="player-cards">';
+                        player.cards.forEach(c => {
+                            if (c && c.rank) cardsHtml += `<div class="mini-card"><span style="color: ${c.suit === 'hearts' || c.suit === 'diamonds' ? '#e74c3c' : '#2c3e50'}">${c.rank}${suits[c.suit] || c.suit}</span></div>`;
+                        });
+                        cardsHtml += '</div>';
+                    }
+                    
+                    div.innerHTML = `
+                        <div class="player-name">${player.name}</div>
+                        <div class="player-stack">💰 <span>${Math.floor(player.stack).toLocaleString()}</span> USDT</div>
+                        ${cardsHtml}
+                    `;
+                    playersDiv.appendChild(div);
+                });
+            }
+            
+            myPlayer = state.players?.find(p => p.id === myId);
+            
+            const yourHandDiv = document.getElementById('yourHand');
+            yourHandDiv.innerHTML = '';
+            if (myPlayer && myPlayer.cards && myPlayer.cards.length) {
+                myPlayer.cards.forEach(card => {
+                    if (card && card.rank) yourHandDiv.appendChild(createCardElement(card.rank, card.suit));
+                });
+            }
+            
+            const yourInfoDiv = document.getElementById('yourInfo');
+            if (myPlayer) {
+                yourInfoDiv.innerHTML = `💰 Твой стек: ${Math.floor(myPlayer.stack).toLocaleString()} USDT`;
+            } else {
+                yourInfoDiv.innerHTML = '👆 Нажми "Присоединиться"';
+            }
+            
+            const statusDiv = document.getElementById('gameStatus');
+            if (state.status === 'waiting') statusDiv.innerHTML = '🎴 Ожидание игроков...';
+            else if (state.status === 'playing') statusDiv.innerHTML = '🔥 Игра идёт! 🔥';
+            else if (state.status === 'finished' && state.winner) {
+                statusDiv.innerHTML = `🏆 Победил: ${state.winner.name}`;
+                const winnerDiv = document.getElementById('winnerAnnounce');
+                winnerDiv.style.display = 'block';
+                winnerDiv.innerHTML = `🎉🏆 ${state.winner.name} выиграл ${state.pot.toLocaleString()} USDT! 🏆🎉`;
+                setTimeout(() => winnerDiv.style.display = 'none', 5000);
+            }
+            
+            document.querySelectorAll('.action-btn').forEach(btn => btn.remove());
+            const actionsDiv = document.getElementById('actions');
+            const existingJoin = document.getElementById('joinBtn');
+            const existingStart = document.getElementById('startBtn');
+            
+            const playerIndex = state.players?.findIndex(p => p.id === myId);
+            const isMyTurn = state.activePlayer === playerIndex && state.status === 'playing' && myPlayer?.isActive !== false;
+            
+            if (isMyTurn && myPlayer && myPlayer.stack > 0) {
+                const callAmount = state.currentBet - (myPlayer.bet || 0);
+                const callText = callAmount > 0 ? `CALL ${callAmount}` : 'CHECK';
+                
+                const foldBtn = document.createElement('button');
+                foldBtn.className = 'fold action-btn';
+                foldBtn.innerText = 'FOLD';
+                foldBtn.onclick = () => socket.emit('action', { action: 'fold' });
+                
+                const callBtn = document.createElement('button');
+                callBtn.className = 'call action-btn';
+                callBtn.innerText = callText;
+                callBtn.onclick = () => socket.emit('action', { action: 'call' });
+                
+                const raiseBtn = document.createElement('button');
+                raiseBtn.className = 'raise action-btn';
+                raiseBtn.innerText = 'RAISE';
+                raiseBtn.onclick = () => {
+                    let amount = prompt('Сколько USDT поднять?', Math.min(50, myPlayer.stack));
+                    if (amount && !isNaN(amount) && amount > 0) {
+                        socket.emit('action', { action: 'raise', amount: Math.min(parseInt(amount), myPlayer.stack) });
+                    }
+                };
+                
+                const allinBtn = document.createElement('button');
+                allinBtn.className = 'allin action-btn';
+                allinBtn.innerText = 'ALL-IN';
+                allinBtn.onclick = () => socket.emit('action', { action: 'allin' });
+                
+                if (existingJoin) existingJoin.remove();
+                if (existingStart) existingStart.remove();
+                
+                actionsDiv.appendChild(foldBtn);
+                actionsDiv.appendChild(callBtn);
+                actionsDiv.appendChild(raiseBtn);
+                actionsDiv.appendChild(allinBtn);
+            } else {
+                if (!document.getElementById('joinBtn')) {
+                    const joinBtn = document.createElement('button');
+                    joinBtn.id = 'joinBtn';
+                    joinBtn.className = 'join';
+                    joinBtn.innerText = '🎮 Присоединиться';
+                    joinBtn.onclick = () => {
+                        const name = prompt('Ваше имя:', `Игрок${Math.floor(Math.random() * 1000)}`);
+                        if (name) socket.emit('joinGame', { name });
+                    };
+                    actionsDiv.appendChild(joinBtn);
+                }
+                if (!document.getElementById('startBtn')) {
+                    const startBtn = document.createElement('button');
+                    startBtn.id = 'startBtn';
+                    startBtn.className = 'start';
+                    startBtn.innerText = '▶ Начать игру';
+                    startBtn.onclick = () => socket.emit('startGame');
+                    actionsDiv.appendChild(startBtn);
+                }
+            }
+        }
+        
+        socket.on('connect', () => {
+            myId = socket.id;
+            console.log('✅ Подключен, ID:', myId);
+        });
+        
+        socket.on('gameState', (state) => updateUI(state));
+        
+        document.getElementById('walletStatus').onclick = () => {
+            alert('🔗 Скоро: подключение BSC кошелька (USDT)\nПока играем в демо-режиме');
+        };
+        
+        console.log('🎮 Poker Mini App загружен');
+    </script>
+</body>
+</html>
