@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Chip Poker</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600;700&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; user-select: none; }
+
+        body { background: #0a0a0f; min-height: 100vh; font-family: 'Inter', sans-serif; overflow-x: hidden; }
+
+        #splash {
+            position: fixed; inset: 0; z-index: 200;
+            background: radial-gradient(ellipse at 50% 0%, #1a0a00 0%, #0a0a0f 70%);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 24px;
+        }
+        .splash-glow {
+            position: absolute; top: -100px; left: 50%; transform: translateX(-50%);
+            width: 600px; height: 400px;
+            background: radial-gradient(ellipse, rgba(212,175,55,0.15) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        .splash-logo {
+            font-family: 'Playfair Display', serif; font-size: 52px;
+            background: linear-gradient(135deg, #f5d76e 0%, #c9952a 50%, #f5d76e 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            text-align: center; line-height: 1; margin-bottom: 6px;
+            filter: drop-shadow(0 0 30px rgba(212,175,55,0.4));
+        }
+        .splash-sub { font-size: 13px; letter-spacing: 4px; color: rgba(212,175,55,0.6); text-transform: uppercase; margin-bottom: 48px; }
+        .splash-card-art { display: flex; margin-bottom: 48px; }
+        .splash-card {
+            width: 64px; height: 90px; background: white; border-radius: 10px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6); transform-origin: bottom center;
+        }
+        .splash-card:nth-child(1) { transform: rotate(-20deg) translateX(20px); z-index: 1; }
+        .splash-card:nth-child(2) { transform: rotate(-8deg) translateX(8px); z-index: 2; }
+        .splash-card:nth-child(3) { transform: rotate(4deg); z-index: 3; }
+        .splash-card:nth-child(4) { transform: rotate(16deg) translateX(-8px); z-index: 2; }
+        .splash-card:nth-child(5) { transform: rotate(28deg) translateX(-20px); z-index: 1; }
+        .splash-card .sr { font-size: 20px; font-weight: 900; line-height: 1; }
+        .splash-card .ss { font-size: 18px; line-height: 1; }
+        .red-c { color: #dc2626; } .blk-c { color: #1a1a2e; }
+        .splash-divider { width: 200px; height: 1px; background: linear-gradient(90deg, transparent, rgba(212,175,55,0.5), transparent); margin-bottom: 32px; }
+        .splash-user {
+            display: flex; align-items: center; gap: 14px;
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(212,175,55,0.2);
+            border-radius: 60px; padding: 10px 20px; margin-bottom: 32px;
+        }
+        .splash-avatar {
+            width: 44px; height: 44px; border-radius: 50%;
+            background: linear-gradient(135deg, #f5d76e, #c9952a);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px; overflow: hidden; border: 2px solid rgba(212,175,55,0.4);
+        }
+        .splash-username { font-size: 16px; font-weight: 600; color: white; }
+        .splash-balance { font-size: 12px; color: rgba(212,175,55,0.7); margin-top: 2px; }
+        .splash-play-btn {
+            width: 100%; max-width: 320px; padding: 18px; font-size: 18px; font-weight: 700;
+            background: linear-gradient(135deg, #f5d76e 0%, #c9952a 100%);
+            color: #1a0a00; border: none; border-radius: 60px; cursor: pointer; letter-spacing: 1px;
+            box-shadow: 0 8px 32px rgba(201,149,42,0.4); font-family: 'Inter', sans-serif;
+        }
+        .splash-play-btn:active { transform: scale(0.97); }
+        .splash-chips { display: flex; gap: 12px; margin-top: 24px; }
+        .chip {
+            width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 10px; font-weight: 700; color: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4); border: 3px dashed rgba(255,255,255,0.3);
+        }
+        .chip-r { background: #dc2626; } .chip-b { background: #1d4ed8; }
+        .chip-g { background: #15803d; } .chip-blk { background: #1a1a1a; border-color: rgba(212,175,55,0.5); }
+        .chip-p { background: #7c3aed; }
+
+        #game { display: none; min-height: 100vh; background: #0a0a0f; flex-direction: column; }
+
+        .game-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 12px 16px; background: rgba(0,0,0,0.6);
+            border-bottom: 1px solid rgba(212,175,55,0.15);
+        }
+        .game-logo { font-family: 'Playfair Display', serif; font-size: 20px; background: linear-gradient(135deg, #f5d76e, #c9952a); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .game-status-badge { background: rgba(212,175,55,0.1); border: 1px solid rgba(212,175,55,0.3); color: #f5d76e; font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 20px; }
+        .game-round-badge { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.5); font-size: 11px; padding: 6px 12px; border-radius: 20px; }
+
+        .table-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px 16px; }
+        .table-outer { width: 100%; max-width: 480px; height: 340px; position: relative; }
+
+        .table-felt {
+            position: absolute; top: 10%; bottom: 10%; left: 2%; right: 2%;
+            background: radial-gradient(ellipse at center, #1e6b38 0%, #0f4020 60%, #071a0d 100%);
+            border-radius: 50%; border: 10px solid #6b3f1a;
+            box-shadow: 0 0 0 3px #a0682a, 0 0 0 6px #4a2510, 0 0 0 8px #2a1408, 0 24px 80px rgba(0,0,0,0.9), inset 0 2px 8px rgba(255,255,255,0.06);
+        }
+        .table-felt::after {
+            content: ''; position: absolute; inset: 0; border-radius: 50%;
+            background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.015) 4px, rgba(255,255,255,0.015) 5px);
+        }
+
+        .pot-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; z-index: 10; }
+        .pot-label { font-size: 9px; color: rgba(212,175,55,0.5); letter-spacing: 2px; text-transform: uppercase; }
+        .pot-amount { font-size: 24px; font-weight: 700; color: #f5d76e; line-height: 1.1; text-shadow: 0 0 20px rgba(245,215,110,0.5); }
+
+        .community-wrap { position: absolute; top: 34%; left: 50%; transform: translate(-50%, -50%); display: flex; gap: 5px; z-index: 10; }
+        .c-card {
+            width: 36px; height: 52px; background: white; border-radius: 6px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6); font-weight: 800; font-size: 12px; line-height: 1.1;
+        }
+        .c-card-empty { background: rgba(255,255,255,0.04); border: 1px dashed rgba(212,175,55,0.15); }
+
+        /* SEATS */
+        .seat { position: absolute; display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 20; transform: translate(-50%, -50%); }
+
+        /* Timer ring around avatar */
+        .seat-timer-wrap {
+            position: relative; width: 52px; height: 52px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .seat-timer-svg {
+            position: absolute; top: 0; left: 0; width: 52px; height: 52px;
+            transform: rotate(-90deg);
+        }
+        .seat-timer-circle {
+            fill: none; stroke: #f5d76e; stroke-width: 3;
+            stroke-dasharray: 138; stroke-dashoffset: 0;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 1s linear, stroke 0.3s;
+        }
+        .seat-timer-circle.urgent { stroke: #dc2626; }
+
+        .seat-avatar {
+            width: 44px; height: 44px; border-radius: 50%;
+            background: linear-gradient(135deg, #374151, #1f2937);
+            border: 2px solid rgba(255,255,255,0.15);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; overflow: hidden; position: relative;
+        }
+        .seat-avatar.active-seat { border-color: #f5d76e; }
+        .seat-avatar.my-seat { border-color: #22c55e; }
+        .seat-avatar.folded-seat { opacity: 0.4; filter: grayscale(1); }
+
+        .seat-badge {
+            position: absolute; bottom: -2px; right: -2px;
+            width: 16px; height: 16px; border-radius: 50%;
+            font-size: 8px; font-weight: 900;
+            display: flex; align-items: center; justify-content: center;
+            border: 1px solid rgba(0,0,0,0.5);
+        }
+        .badge-sb { background: #3b82f6; color: white; }
+        .badge-bb { background: #ef4444; color: white; }
+
+        .seat-name { font-size: 10px; font-weight: 600; color: white; white-space: nowrap; background: rgba(0,0,0,0.75); padding: 2px 7px; border-radius: 8px; max-width: 72px; overflow: hidden; text-overflow: ellipsis; }
+        .seat-stack { font-size: 9px; color: #f5d76e; font-weight: 700; }
+        .seat-bet { font-size: 9px; color: #86efac; background: rgba(34,197,94,0.15); padding: 1px 5px; border-radius: 6px; }
+        .seat-cards { display: flex; gap: 2px; }
+
+        .mini-card-back {
+            width: 20px; height: 28px; border-radius: 3px;
+            background: linear-gradient(135deg, #1e1b4b, #312e81);
+            border: 1px solid rgba(139,92,246,0.4); position: relative; overflow: hidden;
+        }
+        .mini-card-back::after {
+            content: ''; position: absolute; inset: 2px;
+            border: 1px solid rgba(139,92,246,0.3); border-radius: 2px;
+            background: repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(139,92,246,0.15) 2px, rgba(139,92,246,0.15) 3px);
+        }
+        .mini-card-face { width: 20px; height: 28px; background: white; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 8px; font-weight: 800; }
+
+        /* MY HAND */
+        .my-hand-section { padding: 10px 16px; background: rgba(0,0,0,0.5); border-top: 1px solid rgba(212,175,55,0.1); }
+        .my-cards-row { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
+        .my-card {
+            width: 56px; height: 80px; background: white; border-radius: 9px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6); font-weight: 900;
+            animation: card-deal 0.3s ease;
+        }
+        @keyframes card-deal { from { transform: scale(0.8) translateY(10px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+        .my-card .rank { font-size: 26px; line-height: 1; }
+        .my-card .suit { font-size: 22px; line-height: 1; }
+
+        /* RAISE SLIDER */
+        .raise-section { display: none; padding: 0 16px 8px; background: rgba(0,0,0,0.5); }
+        .raise-section.visible { display: block; }
+        .raise-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+        .raise-slider { flex: 1; -webkit-appearance: none; height: 4px; background: linear-gradient(90deg, #16a34a, #f5d76e); border-radius: 2px; outline: none; }
+        .raise-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #f5d76e; box-shadow: 0 0 8px rgba(245,215,110,0.6); cursor: pointer; }
+        .raise-value { font-size: 14px; font-weight: 700; color: #f5d76e; min-width: 40px; text-align: right; }
+        .raise-confirm-btn { width: 100%; padding: 10px; font-size: 14px; font-weight: 700; background: linear-gradient(135deg, #14532d, #16a34a); color: white; border: none; border-radius: 40px; cursor: pointer; font-family: 'Inter', sans-serif; }
+
+        /* ACTIONS */
+        .actions-row { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 0 16px 12px; }
+        .action-btn { padding: 12px 18px; font-size: 14px; font-weight: 700; border: none; border-radius: 50px; cursor: pointer; font-family: 'Inter', sans-serif; transition: transform 0.08s; touch-action: manipulation; min-width: 80px; }
+        .action-btn:active { transform: scale(0.93); }
+        .btn-fold { background: linear-gradient(135deg, #7f1d1d, #dc2626); color: white; box-shadow: 0 4px 16px rgba(220,38,38,0.3); }
+        .btn-call { background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
+        .btn-raise { background: linear-gradient(135deg, #14532d, #16a34a); color: white; box-shadow: 0 4px 16px rgba(22,163,74,0.3); }
+        .btn-allin { background: linear-gradient(135deg, #78350f, #d97706); color: white; box-shadow: 0 4px 16px rgba(217,119,6,0.3); }
+        .btn-join { background: linear-gradient(135deg, #f5d76e, #c9952a); color: #1a0a00; box-shadow: 0 4px 16px rgba(201,149,42,0.4); }
+        .btn-start { background: linear-gradient(135deg, #4c1d95, #7c3aed); color: white; box-shadow: 0 4px 16px rgba(124,58,237,0.3); }
+
+        .winner-bar { margin: 6px 16px; background: linear-gradient(135deg, rgba(245,215,110,0.15), rgba(201,149,42,0.1)); border: 1px solid rgba(245,215,110,0.3); border-radius: 14px; padding: 10px 16px; text-align: center; color: #f5d76e; font-weight: 700; font-size: 14px; }
+
+        .confetti-piece { position: fixed; width: 10px; height: 10px; top: -10px; animation: confetti-fall linear forwards; z-index: 999; border-radius: 2px; }
+        @keyframes confetti-fall { 0% { transform: translateY(0) rotate(0deg); opacity: 1; } 100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } }
+
+        .my-info-row { display: flex; justify-content: center; align-items: center; gap: 14px; margin-bottom: 6px; }
+        .my-name-badge { font-size: 13px; font-weight: 700; color: white; }
+        .my-stack-badge { font-size: 13px; color: #f5d76e; font-weight: 700; }
+        .my-turn-badge { background: rgba(245,215,110,0.15); border: 1px solid rgba(245,215,110,0.4); color: #f5d76e; font-size: 11px; padding: 3px 10px; border-radius: 10px; animation: blink 1s infinite; }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+        .reconnect-banner { display: none; position: fixed; top: 0; left: 0; right: 0; background: rgba(220,38,38,0.9); color: white; text-align: center; padding: 8px; font-size: 13px; font-weight: 600; z-index: 500; }
+        .reconnect-banner.visible { display: block; }
+    </style>
+</head>
+<body>
+
+<div class="reconnect-banner" id="reconnectBanner">⚠️ Соединение потеряно, переподключаемся...</div>
+
+<div id="splash">
+    <div class="splash-glow"></div>
+    <div class="splash-logo">♠ CHIP POKER</div>
+    <div class="splash-sub">Texas Hold'em</div>
+    <div class="splash-card-art">
+        <div class="splash-card"><span class="sr red-c">A</span><span class="ss red-c">♥</span></div>
+        <div class="splash-card"><span class="sr blk-c">K</span><span class="ss blk-c">♠</span></div>
+        <div class="splash-card"><span class="sr red-c">Q</span><span class="ss red-c">♦</span></div>
+        <div class="splash-card"><span class="sr blk-c">J</span><span class="ss blk-c">♣</span></div>
+        <div class="splash-card"><span class="sr red-c">10</span><span class="ss red-c">♥</span></div>
+    </div>
+    <div class="splash-divider"></div>
+    <div class="splash-user">
+        <div class="splash-avatar" id="splashAvatar">🃏</div>
+        <div>
+            <div class="splash-username" id="splashName">Загрузка...</div>
+            <div class="splash-balance">⭐ 1 000 фишек</div>
+        </div>
+    </div>
+    <button class="splash-play-btn" onclick="enterGame()">🎰 ИГРАТЬ</button>
+    <div class="splash-chips">
+        <div class="chip chip-r">5</div>
+        <div class="chip chip-b">10</div>
+        <div class="chip chip-g">25</div>
+        <div class="chip chip-blk">100</div>
+        <div class="chip chip-p">500</div>
+    </div>
+</div>
+
+<div id="game">
+    <div class="game-header">
+        <div class="game-logo">♠ CHIP POKER</div>
+        <div class="game-status-badge" id="gameStatusBadge">⏳ Ожидание</div>
+        <div class="game-round-badge" id="roundBadge">Префлоп</div>
+    </div>
+    <div class="table-wrap">
+        <div class="table-outer" id="tableOuter">
+            <div class="table-felt"></div>
+            <div class="community-wrap" id="communityCards"></div>
+            <div class="pot-center">
+                <div style="font-size:18px">🪙</div>
+                <div class="pot-amount" id="potAmount">0</div>
+                <div class="pot-label">банк</div>
+            </div>
+        </div>
+    </div>
+    <div id="winnerBar" class="winner-bar" style="display:none;"></div>
+    <div class="my-hand-section">
+        <div class="my-info-row">
+            <span class="my-name-badge" id="myNameBadge">—</span>
+            <span class="my-stack-badge" id="myStackBadge">⭐ 1 000</span>
+            <span class="my-turn-badge" id="myTurnBadge" style="display:none;">ВАШ ХОД</span>
+        </div>
+        <div class="my-cards-row" id="myCards"></div>
+    </div>
+    <div class="raise-section" id="raiseSection">
+        <div class="raise-row">
+            <input type="range" class="raise-slider" id="raiseSlider" min="10" max="1000" step="5" value="50">
+            <span class="raise-value" id="raiseValue">50</span>
+        </div>
+        <button class="raise-confirm-btn" id="raiseConfirmBtn">RAISE <span id="raiseConfirmAmt">50</span></button>
+    </div>
+    <div class="actions-row" id="actions"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    const SUITS = { hearts:'♥', diamonds:'♦', clubs:'♣', spades:'♠' };
+    const RED = { hearts:true, diamonds:true };
+    const TIMER_SECONDS = 30;
+    const CIRCUMFERENCE = 138; // 2 * PI * r (r=22)
+
+    const tg = window.Telegram?.WebApp;
+    if (tg) { tg.ready(); tg.expand(); }
+
+    function parseTgUser() {
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlUid = urlParams.get('uid');
+            const urlName = urlParams.get('uname');
+            if (urlUid) return { id: urlUid, first_name: decodeURIComponent(urlName || 'Игрок') };
+        } catch(e) {}
+        const u = tg?.initDataUnsafe?.user;
+        if (u?.id) return u;
+        try {
+            const raw = tg?.initData;
+            if (raw && raw.length > 0) {
+                const params = new URLSearchParams(raw);
+                const userStr = params.get('user');
+                if (userStr) return JSON.parse(decodeURIComponent(userStr));
+            }
+        } catch(e) {}
+        return null;
+    }
+
+    let myName = 'Игрок';
+    let myPhoto = null;
+    let myTelegramId = null;
+    let myId = null;
+    let myPlayer = null;
+    let hasJoined = false;
+    let gameState = null;
+    let raiseVisible = false;
+
+    // Timer state
+    let timerInterval = null;
+    let timerSeconds = TIMER_SECONDS;
+    let timerActiveTelegramId = null;
+
+    const tgUser = parseTgUser();
+    if (tgUser) {
+        myName = tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '');
+        myPhoto = tgUser.photo_url || null;
+        myTelegramId = tgUser.id ? String(tgUser.id) : null;
+        if (myPhoto) {
+            document.getElementById('splashAvatar').innerHTML =
+                `<img src="${myPhoto}" style="width:44px;height:44px;border-radius:50%;object-fit:cover">`;
+        }
+    }
+    document.getElementById('splashName').innerText = myName;
+
+    if (!myTelegramId) {
+        myTelegramId = localStorage.getItem('chippoker_uid');
+        if (!myTelegramId) {
+            myTelegramId = 'guest_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('chippoker_uid', myTelegramId);
+        }
+    }
+
+    const raiseSlider = document.getElementById('raiseSlider');
+    const raiseValue = document.getElementById('raiseValue');
+    const raiseConfirmAmt = document.getElementById('raiseConfirmAmt');
+    raiseSlider.addEventListener('input', () => {
+        raiseValue.innerText = raiseSlider.value;
+        raiseConfirmAmt.innerText = raiseSlider.value;
+    });
+    document.getElementById('raiseConfirmBtn').onclick = () => {
+        socket.emit('action', { action:'raise', amount: parseInt(raiseSlider.value) });
+        hideRaise();
+    };
+
+    function showRaise(max) {
+        raiseSlider.max = max;
+        raiseSlider.value = Math.min(50, max);
+        raiseValue.innerText = raiseSlider.value;
+        raiseConfirmAmt.innerText = raiseSlider.value;
+        document.getElementById('raiseSection').classList.add('visible');
+        raiseVisible = true;
+    }
+    function hideRaise() {
+        document.getElementById('raiseSection').classList.remove('visible');
+        raiseVisible = false;
+    }
+
+    // ===== TIMER =====
+    function startTimer(activeTelegramId, isMyTurn) {
+        stopTimer();
+        timerSeconds = TIMER_SECONDS;
+        timerActiveTelegramId = activeTelegramId;
+
+        updateTimerUI(timerSeconds);
+
+        timerInterval = setInterval(() => {
+            timerSeconds--;
+            updateTimerUI(timerSeconds);
+
+            if (timerSeconds <= 0) {
+                stopTimer();
+                // Авто-fold если мой ход
+                if (isMyTurn) {
+                    socket.emit('action', { action:'fold' });
+                    hideRaise();
+                }
+            }
+        }, 1000);
+    }
+
+    function stopTimer() {
+        if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+        timerActiveTelegramId = null;
+        // Сбрасываем все кольца
+        document.querySelectorAll('.seat-timer-circle').forEach(c => {
+            c.style.strokeDashoffset = CIRCUMFERENCE;
+            c.classList.remove('urgent');
+        });
+    }
+
+    function updateTimerUI(seconds) {
+        const circle = document.querySelector(`.timer-for-${CSS.escape(timerActiveTelegramId)}`);
+        if (!circle) return;
+        const progress = seconds / TIMER_SECONDS;
+        circle.style.strokeDashoffset = CIRCUMFERENCE * (1 - progress);
+        if (seconds <= 10) circle.classList.add('urgent');
+        else circle.classList.remove('urgent');
+    }
+
+    const socket = io('https://chippoker.bothost.tech', {
+        transports: ['websocket','polling'],
+        reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        timeout: 20000,
+    });
+
+    function joinTable() {
+        socket.emit('joinTable', { tableId: '1', name: myName, photo: myPhoto, telegramId: myTelegramId });
+    }
+
+    function enterGame() {
+        hasJoined = true;
+        document.getElementById('splash').style.display = 'none';
+        document.getElementById('game').style.display = 'flex';
+        joinTable();
+    }
+
+    const SEAT_POS = [
+        { top:'92%', left:'50%' },
+        { top:'8%',  left:'50%' },
+        { top:'30%', left:'5%'  },
+        { top:'30%', left:'95%' },
+        { top:'72%', left:'5%'  },
+        { top:'72%', left:'95%' },
+    ];
+
+    function confetti() {
+        const colors = ['#f5d76e','#dc2626','#2563eb','#16a34a','#7c3aed','#ffffff'];
+        for (let i = 0; i < 60; i++) {
+            const el = document.createElement('div');
+            el.className = 'confetti-piece';
+            el.style.left = Math.random() * 100 + 'vw';
+            el.style.background = colors[Math.floor(Math.random()*colors.length)];
+            el.style.width = (Math.random()*8+4) + 'px';
+            el.style.height = (Math.random()*8+4) + 'px';
+            el.style.animationDuration = (Math.random()*2+1.5) + 's';
+            el.style.animationDelay = (Math.random()*0.5) + 's';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 4000);
+        }
+    }
+
+    function renderBigCard(rank, suit) {
+        const d = document.createElement('div');
+        d.className = 'my-card';
+        d.style.color = RED[suit] ? '#dc2626' : '#1a1a2e';
+        d.innerHTML = `<div class="rank">${rank}</div><div class="suit">${SUITS[suit]||suit}</div>`;
+        return d;
+    }
+
+    function renderCommunityCard(card) {
+        const d = document.createElement('div');
+        if (!card || card.hidden) { d.className = 'c-card c-card-empty'; return d; }
+        d.className = 'c-card';
+        d.style.color = RED[card.suit] ? '#dc2626' : '#1a1a2e';
+        d.innerHTML = `<div>${card.rank}</div><div>${SUITS[card.suit]||card.suit}</div>`;
+        return d;
+    }
+
+    function updateUI(state) {
+        gameState = state;
+        if (!state) return;
+
+        myPlayer = state.players?.find(p => p.telegramId === myTelegramId);
+        const myIdx = state.players?.findIndex(p => p.telegramId === myTelegramId) ?? -1;
+
+        const statusMap = { waiting:'⏳ Ожидание', playing:'🔥 Игра идёт', finished:'🏆 Завершено' };
+        document.getElementById('gameStatusBadge').innerText = statusMap[state.status] || '—';
+        const roundMap = { preflop:'Префлоп', flop:'Флоп', turn:'Тёрн', river:'Ривер', showdown:'Вскрытие' };
+        document.getElementById('roundBadge').innerText = roundMap[state.round] || '—';
+        document.getElementById('potAmount').innerText = state.pot.toLocaleString();
+
+        const cc = document.getElementById('communityCards');
+        cc.innerHTML = '';
+        for (let i = 0; i < 5; i++) cc.appendChild(renderCommunityCard(state.communityCards?.[i]));
+
+        const tableOuter = document.getElementById('tableOuter');
+        tableOuter.querySelectorAll('.seat').forEach(s => s.remove());
+
+        const players = state.players || [];
+        let ordered = [...players];
+        if (myIdx > 0) ordered = [...players.slice(myIdx), ...players.slice(0, myIdx)];
+
+        // Определяем активного игрока по telegramId
+        const activePlayer = state.status === 'playing' ? state.players[state.activePlayer] : null;
+        const activeTgId = activePlayer?.telegramId || null;
+        const isMyTurn = myIdx >= 0 && myIdx === state.activePlayer && state.status === 'playing' && !myPlayer?.folded;
+
+        // Запускаем таймер если ход сменился
+        if (state.status === 'playing' && activeTgId && activeTgId !== timerActiveTelegramId) {
+            startTimer(activeTgId, isMyTurn);
+        } else if (state.status !== 'playing') {
+            stopTimer();
+        }
+
+        ordered.forEach((player, i) => {
+            if (i >= SEAT_POS.length) return;
+            const pos = SEAT_POS[i];
+            const isMe = player.telegramId === myTelegramId;
+            const realIdx = state.players.indexOf(player);
+            const isActive = player.telegramId === activeTgId;
+
+            const seat = document.createElement('div');
+            seat.className = 'seat';
+            seat.style.top = pos.top;
+            seat.style.left = pos.left;
+
+            // Timer wrap с SVG кольцом
+            const timerWrap = document.createElement('div');
+            timerWrap.className = 'seat-timer-wrap';
+
+            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('class', 'seat-timer-svg');
+            svg.setAttribute('viewBox', '0 0 52 52');
+
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('class', `seat-timer-circle timer-for-${player.telegramId}`);
+            circle.setAttribute('cx', '26');
+            circle.setAttribute('cy', '26');
+            circle.setAttribute('r', '22');
+            circle.style.strokeDashoffset = isActive
+                ? String(CIRCUMFERENCE * (1 - timerSeconds / TIMER_SECONDS))
+                : String(CIRCUMFERENCE);
+            if (isActive && timerSeconds <= 10) circle.classList.add('urgent');
+
+            svg.appendChild(circle);
+
+            const avatar = document.createElement('div');
+            avatar.className = 'seat-avatar'
+                + (isActive ? ' active-seat' : '')
+                + (isMe ? ' my-seat' : '')
+                + (player.folded ? ' folded-seat' : '');
+
+            if (player.photo) {
+                avatar.innerHTML = `<img src="${player.photo}" style="width:44px;height:44px;border-radius:50%;object-fit:cover" onerror="this.parentElement.innerText='${(player.name?.[0]||'?').toUpperCase()}'">`;
+            } else {
+                avatar.innerText = (player.name?.[0] || '?').toUpperCase();
+            }
+
+            if (state.status === 'playing' && players.length >= 2) {
+                if (realIdx === 0) {
+                    const b = document.createElement('div');
+                    b.className = 'seat-badge badge-sb'; b.innerText = 'SB';
+                    avatar.appendChild(b);
+                } else if (realIdx === 1) {
+                    const b = document.createElement('div');
+                    b.className = 'seat-badge badge-bb'; b.innerText = 'BB';
+                    avatar.appendChild(b);
+                }
+            }
+
+            timerWrap.appendChild(svg);
+            timerWrap.appendChild(avatar);
+
+            const cardsEl = document.createElement('div');
+            cardsEl.className = 'seat-cards';
+            if (player.cards?.length) {
+                player.cards.forEach(c => {
+                    const d = document.createElement('div');
+                    if (c?.hidden || (!isMe && state.status !== 'finished')) {
+                        d.className = 'mini-card-back';
+                    } else {
+                        d.className = 'mini-card-face';
+                        d.style.color = RED[c?.suit] ? '#dc2626' : '#1a1a2e';
+                        d.innerText = (c?.rank||'') + (SUITS[c?.suit]||'');
+                    }
+                    cardsEl.appendChild(d);
+                });
+            }
+
+            const nameEl = document.createElement('div');
+            nameEl.className = 'seat-name';
+            nameEl.innerText = player.name || 'Игрок';
+
+            const stackEl = document.createElement('div');
+            stackEl.className = 'seat-stack';
+            stackEl.innerText = '⭐ ' + Math.floor(player.stack).toLocaleString();
+
+            if (player.bet > 0) {
+                const betEl = document.createElement('div');
+                betEl.className = 'seat-bet';
+                betEl.innerText = '🪙 ' + player.bet;
+                seat.appendChild(betEl);
+            }
+
+            seat.appendChild(timerWrap);
+            seat.appendChild(cardsEl);
+            seat.appendChild(nameEl);
+            seat.appendChild(stackEl);
+            tableOuter.appendChild(seat);
+        });
+
+        document.getElementById('myNameBadge').innerText = myPlayer?.name || myName;
+        document.getElementById('myStackBadge').innerText = '⭐ ' + Math.floor(myPlayer?.stack || 0).toLocaleString();
+        document.getElementById('myTurnBadge').style.display = isMyTurn ? 'inline' : 'none';
+
+        const myCardsEl = document.getElementById('myCards');
+        myCardsEl.innerHTML = '';
+        if (myPlayer?.cards?.length) {
+            myPlayer.cards.forEach(c => { if (c?.rank) myCardsEl.appendChild(renderBigCard(c.rank, c.suit)); });
+        }
+
+        const winnerBar = document.getElementById('winnerBar');
+        if (state.status === 'finished' && state.winner) {
+            winnerBar.style.display = 'block';
+            winnerBar.innerHTML = `🏆 ${state.winner.name} выиграл ${state.pot.toLocaleString()} фишек! (${state.winner.handName || ''})`;
+            confetti();
+        } else {
+            winnerBar.style.display = 'none';
+        }
+
+        if (!isMyTurn) hideRaise();
+        const actionsEl = document.getElementById('actions');
+        actionsEl.innerHTML = '';
+
+        if (isMyTurn && myPlayer?.stack > 0) {
+            const callAmt = Math.max(0, state.currentBet - (myPlayer.bet || 0));
+            const callText = callAmt > 0 ? `CALL ${callAmt}` : 'CHECK';
+
+            [
+                ['FOLD', 'btn-fold', () => { socket.emit('action', { action:'fold' }); hideRaise(); }],
+                [callText, 'btn-call', () => { socket.emit('action', { action:'call' }); hideRaise(); }],
+                ['RAISE', 'btn-raise', () => {
+                    if (raiseVisible) { hideRaise(); return; }
+                    showRaise(myPlayer.stack);
+                }],
+                ['ALL-IN', 'btn-allin', () => { socket.emit('action', { action:'allin' }); hideRaise(); }],
+            ].forEach(([txt, cls, fn]) => {
+                const b = document.createElement('button');
+                b.className = 'action-btn ' + cls; b.innerText = txt; b.onclick = fn;
+                actionsEl.appendChild(b);
+            });
+        } else {
+            if (!myPlayer) {
+                const b = document.createElement('button');
+                b.className = 'action-btn btn-join'; b.innerText = '🎮 Присоединиться';
+                b.onclick = () => { joinTable(); hasJoined = true; };
+                actionsEl.appendChild(b);
+            }
+            if (state.status === 'waiting' && myPlayer) {
+                const b = document.createElement('button');
+                b.className = 'action-btn btn-start'; b.innerText = '▶ Начать игру';
+                b.onclick = () => socket.emit('startGame');
+                actionsEl.appendChild(b);
+            }
+            if (state.status === 'finished') {
+                const b = document.createElement('button');
+                b.className = 'action-btn btn-start'; b.innerText = '🔄 Новая раздача';
+                b.onclick = () => socket.emit('startGame');
+                actionsEl.appendChild(b);
+            }
+        }
+    }
+
+    socket.on('connect', () => {
+        myId = socket.id;
+        document.getElementById('reconnectBanner').classList.remove('visible');
+        if (hasJoined) joinTable();
+    });
+
+    socket.on('gameState', updateUI);
+
+    socket.on('disconnect', () => {
+        document.getElementById('reconnectBanner').classList.add('visible');
+        stopTimer();
+    });
+
+    setInterval(() => {
+        if (socket.connected) socket.emit('ping');
+    }, 20000);
+</script>
+</body>
+</html>
