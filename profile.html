@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Chip Poker — Профиль</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" defer></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600;700&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body {
+            background: #0a0a0f;
+            font-family: 'Inter', sans-serif;
+            color: white;
+            min-height: 100vh;
+            padding-bottom: 32px;
+        }
+
+        .header {
+            background: rgba(0,0,0,0.6);
+            border-bottom: 1px solid rgba(212,175,55,0.15);
+            padding: 16px 20px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .header-logo {
+            font-family: 'Playfair Display', serif; font-size: 22px;
+            background: linear-gradient(135deg, #f5d76e, #c9952a);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        .content { max-width: 480px; margin: 0 auto; padding: 20px 16px; }
+
+        .profile-card {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(212,175,55,0.2);
+            border-radius: 24px; padding: 24px;
+            text-align: center; margin-bottom: 16px;
+            position: relative; overflow: hidden;
+        }
+        .profile-card::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0; height: 80px;
+            background: radial-gradient(ellipse at 50% 0%, rgba(212,175,55,0.12) 0%, transparent 70%);
+        }
+
+        .profile-avatar {
+            width: 88px; height: 88px; border-radius: 50%;
+            background: linear-gradient(135deg, #f5d76e, #c9952a);
+            margin: 0 auto 12px;
+            border: 3px solid rgba(212,175,55,0.4);
+            overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 36px; font-weight: 700;
+            box-shadow: 0 0 24px rgba(212,175,55,0.3);
+        }
+
+        .profile-name { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+        .profile-since { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 20px; }
+
+        .balance-big {
+            background: rgba(212,175,55,0.08);
+            border: 1px solid rgba(212,175,55,0.2);
+            border-radius: 16px; padding: 16px; margin-bottom: 8px;
+        }
+        .balance-label { font-size: 11px; color: rgba(255,255,255,0.4); letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+        .balance-amount { font-size: 36px; font-weight: 700; color: #f5d76e; text-shadow: 0 0 20px rgba(245,215,110,0.4); }
+        .balance-rank { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+
+        .stats-row {
+            display: grid; grid-template-columns: 1fr 1fr 1fr;
+            gap: 8px; margin-bottom: 16px;
+        }
+        .stat-item {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px; padding: 14px 8px; text-align: center;
+        }
+        .stat-val { font-size: 22px; font-weight: 700; color: white; }
+        .stat-lbl { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+
+        /* КНОПКИ */
+        .btn-lobby {
+            width: 100%; padding: 18px;
+            font-size: 18px; font-weight: 700;
+            background: linear-gradient(135deg, #f5d76e 0%, #c9952a 100%);
+            color: #1a0a00; border: none; border-radius: 60px;
+            cursor: pointer; letter-spacing: 0.5px;
+            box-shadow: 0 8px 32px rgba(201,149,42,0.4);
+            font-family: 'Inter', sans-serif;
+            margin-bottom: 12px;
+            transition: transform 0.08s;
+        }
+        .btn-lobby:active { transform: scale(0.97); }
+
+        .btns-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+
+        .btn-action {
+            padding: 14px; font-size: 14px; font-weight: 700;
+            border-radius: 16px; cursor: pointer;
+            font-family: 'Inter', sans-serif;
+            border: none; transition: transform 0.08s;
+            text-align: center;
+        }
+        .btn-action:active { transform: scale(0.96); }
+
+        /* Синяя -- пополнить */
+        .btn-topup {
+            background: linear-gradient(135deg, #1e3a8a, #2563eb);
+            color: white; box-shadow: 0 4px 16px rgba(37,99,235,0.3);
+        }
+
+        /* Зелёная -- вывести */
+        .btn-withdraw {
+            background: linear-gradient(135deg, #14532d, #22c55e);
+            color: white; box-shadow: 0 4px 16px rgba(34,197,94,0.3);
+            position: relative;
+        }
+        .soon-badge {
+            position: absolute; top: -6px; right: -6px;
+            background: #f5d76e; color: #1a0a00;
+            font-size: 9px; font-weight: 900;
+            padding: 2px 6px; border-radius: 10px;
+        }
+
+        /* Фиолетовая -- рейтинг */
+        .btn-rating {
+            background: linear-gradient(135deg, #4c1d95, #7c3aed);
+            color: white; box-shadow: 0 4px 16px rgba(124,58,237,0.3);
+        }
+
+        /* Неон -- кошелёк */
+        .btn-wallet-action {
+            background: linear-gradient(135deg, #0e4f6e, #00b4d8);
+            color: white; box-shadow: 0 4px 20px rgba(0,180,216,0.4);
+            border: 1px solid rgba(0,212,255,0.3);
+        }
+        .btn-wallet-action.connected {
+            background: linear-gradient(135deg, #064e3b, #059669);
+            box-shadow: 0 4px 16px rgba(5,150,105,0.3);
+            border-color: rgba(34,197,94,0.3);
+        }
+
+        .toast {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            background: rgba(34,197,94,0.9); color: white;
+            padding: 12px 24px; border-radius: 50px;
+            font-size: 14px; font-weight: 600;
+            display: none; z-index: 999; white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-logo">♠ CHIP POKER</div>
+</div>
+
+<div class="content">
+
+    <div class="profile-card">
+        <div class="profile-avatar" id="profileAvatar">🃏</div>
+        <div class="profile-name" id="profileName">Загрузка...</div>
+        <div class="profile-since" id="profileSince"></div>
+
+        <div class="balance-big">
+            <div class="balance-label">Баланс фишек</div>
+            <div class="balance-amount">⭐ <span id="balanceAmount">—</span></div>
+            <div class="balance-rank" id="balanceRank">Место в рейтинге: —</div>
+        </div>
+    </div>
+
+    <div class="stats-row">
+        <div class="stat-item">
+            <div class="stat-val" id="statGames">—</div>
+            <div class="stat-lbl">Игр</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-val" id="statWins">—</div>
+            <div class="stat-lbl">Побед</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-val" id="statWinRate">—</div>
+            <div class="stat-lbl">% побед</div>
+        </div>
+    </div>
+
+    <!-- Главная кнопка -->
+    <button class="btn-lobby" onclick="window.location.href='/lobby'">🎰 В ЛОББИ</button>
+
+    <!-- Пополнить / Вывести -->
+    <div class="btns-row">
+        <button class="btn-action btn-topup" onclick="topUp()">⭐ Пополнить</button>
+        <button class="btn-action btn-withdraw" style="position:relative">
+            💸 Вывести
+            <span class="soon-badge">Скоро</span>
+        </button>
+    </div>
+
+    <!-- Рейтинг / Кошелёк -->
+    <div class="btns-row">
+        <button class="btn-action btn-rating" onclick="window.location.href='/leaderboard'">🏆 Рейтинг</button>
+        <button class="btn-action btn-wallet-action" id="walletBtn" onclick="toggleWallet()">💎 Кошелёк</button>
+    </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) { tg.ready(); tg.expand(); }
+
+    function parseTgUser() {
+        try {
+            const u = tg?.initDataUnsafe?.user;
+            if (u?.id) return u;
+            const raw = tg?.initData;
+            if (raw && raw.length > 0) {
+                const params = new URLSearchParams(raw);
+                const userStr = params.get('user');
+                if (userStr) return JSON.parse(decodeURIComponent(userStr));
+            }
+        } catch(e) {}
+        return null;
+    }
+
+    let myTelegramId = null;
+    let myName = 'Игрок';
+    let myPhoto = null;
+    let tonConnectUI = null;
+
+    const tgUser = parseTgUser();
+    if (tgUser) {
+        myTelegramId = String(tgUser.id);
+        myName = tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '');
+        myPhoto = tgUser.photo_url || null;
+    }
+
+    if (!myTelegramId) {
+        myTelegramId = localStorage.getItem('chippoker_uid');
+        if (!myTelegramId) {
+            myTelegramId = 'guest_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('chippoker_uid', myTelegramId);
+        }
+    }
+
+    document.getElementById('profileName').innerText = myName;
+    if (myPhoto) {
+        document.getElementById('profileAvatar').innerHTML =
+            `<img src="${myPhoto}" style="width:88px;height:88px;border-radius:50%;object-fit:cover">`;
+    } else {
+        document.getElementById('profileAvatar').innerText = myName[0]?.toUpperCase() || '?';
+    }
+
+    async function loadProfile() {
+        try {
+            const res = await fetch('/api/player/' + myTelegramId);
+            const data = await res.json();
+
+            document.getElementById('balanceAmount').innerText = (data.balance || 0).toLocaleString();
+            document.getElementById('balanceRank').innerText = `Место в рейтинге: #${data.rank || '—'}`;
+
+            const games = data.games_played || 0;
+            const wins = data.games_won || 0;
+            const winRate = games > 0 ? Math.round(wins / games * 100) : 0;
+
+            document.getElementById('statGames').innerText = games;
+            document.getElementById('statWins').innerText = wins;
+            document.getElementById('statWinRate').innerText = winRate + '%';
+
+            if (data.created_at) {
+                const date = new Date(data.created_at);
+                document.getElementById('profileSince').innerText =
+                    'Играет с ' + date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+            }
+        } catch(e) { console.error('loadProfile error:', e); }
+    }
+
+    function topUp() {
+        fetch('/create-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: 100 })
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.invoiceLink && tg) tg.openInvoice(data.invoiceLink);
+        })
+        .catch(() => showToast('⚠️ Ошибка создания инвойса'));
+    }
+
+    function initTonConnect() {
+        if (tonConnectUI) return;
+        try {
+            if (typeof TON_CONNECT_UI === 'undefined') return;
+            tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+                manifestUrl: 'https://chippoker.bothost.tech/tonconnect-manifest.json',
+            });
+            tonConnectUI.onStatusChange(wallet => updateWalletBtn(wallet));
+        } catch(e) { console.warn('TON Connect error:', e); }
+    }
+
+    function updateWalletBtn(wallet) {
+        const btn = document.getElementById('walletBtn');
+        if (wallet) {
+            const addr = wallet.account.address;
+            const short = addr.slice(0, 6) + '...' + addr.slice(-4);
+            btn.innerText = `✅ ${short}`;
+            btn.classList.add('connected');
+        } else {
+            btn.innerText = '💎 Кошелёк';
+            btn.classList.remove('connected');
+        }
+    }
+
+    function toggleWallet() {
+        initTonConnect();
+        if (!tonConnectUI) { showToast('⚠️ Загружается...'); return; }
+        if (tonConnectUI.wallet) {
+            if (confirm('Отключить кошелёк?')) tonConnectUI.disconnect();
+        } else {
+            tonConnectUI.openModal();
+        }
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 3000);
+    }
+
+    window.addEventListener('load', () => {
+        initTonConnect();
+        loadProfile();
+    });
+</script>
+</body>
+</html>
