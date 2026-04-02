@@ -1,0 +1,1107 @@
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const cors = require('cors');
+const { Telegraf } = require('telegraf');
+const { Pool } = require('pg');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(express.static(__dirname));
+
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: { origin: "*" },
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+});
+
+const PORT = process.env.PORT || 3000;
+const WEBAPP_URL = process.env.WEBAPP_URL || 'https://chippoker.bothost.tech';
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const DATABASE_URL = process.env.DATABASE_URL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+
+// ===== КОНФИГ СТОЛОВ =====
+const TABLE_CONFIG = {
+  // Тестовые столы ⭐
+  test_bronze:  { type:'test',  tier:'bronze',  sb:10,  bb:20,  rake:0.03, rakeCap:10,  entryStars:0   },
+  test_silver:  { type:'test',  tier:'silver',  sb:25,  bb:50,  rake:0.03, rakeCap:25,  entryStars:0   },
+  test_gold:    { type:'test',  tier:'gold',    sb:50,  bb:100, rake:0.03, rakeCap:50,  entryStars:0   },
+  // Stars столы 🌟
+  stars_bronze: { type:'stars', tier:'bronze',  sb:10,  bb:20,  rake:0.03, rakeCap:30,  entryStars:50  },
+  stars_silver: { type:'stars', tier:'silver',  sb:25,  bb:50,  rake:0.03, rakeCap:75,  entryStars:200 },
+  stars_gold:   { type:'stars', tier:'gold',    sb:50,  bb:100, rake:0.03, rakeCap:150, entryStars:500 },
+};
+
+// ===== POSTGRESQL =====
+const pool = new Pool({ connectionString: DATABASE_URL, ssl: false });
+
+async function initDB() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS players (
+        telegram_id TEXT PRIMARY KEY,
+        name TEXT,
+        photo TEXT,
+        balance INTEGER DEFAULT 1000,
+        stars_balance INTEGER DEFAULT 0,
+        games_played INTEGER DEFAULT 0,
+        games_won INTEGER DEFAULT 0,
+        total_rake INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS house (
+        id SERIAL PRIMARY KEY,
+        table_id TEXT,
+        table_type TEXT,
+        rake_amount INTEGER,
+        pot_amount INTEGER,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    // Добавляем новые колонки если их нет (для существующих БД)
+    await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS stars_balance INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE players ADD COLUMN IF NOT EXISTS total_rake INTEGER DEFAULT 0`);
+    console.log('✅ БД инициализирована');
+  } catch (e) {
+    console.error('❌ Ошибка инициализации БД:', e.message);
+  }
+}
+
+async function getOrCreatePlayer(telegramId, name, photo) {
+  try {
+    const res = await pool.query(
+      `INSERT INTO players (telegram_id, name, photo, balance, stars_balance)
+       VALUES ($1, $2, $3, 1000, 0)
+       ON CONFLICT (telegram_id) DO UPDATE
+       SET name = $2, photo = $3, updated_at = NOW()
+       RETURNING *`,
+      [telegramId, name, photo]
+    );
+    return res.rows[0];
+  } catch (e) {
+    console.error('❌ getOrCreatePlayer:', e.message);
+    return { telegram_id: telegramId, name, balance: 1000, stars_balance: 0 };
+  }
+}
+
+async function saveBalance(telegramId, balance, starsBalance, won, rakeAmount, tableId, tableType) {
+  try {
+    await pool.query(
+      `UPDATE players SET
+        balance = $2,
+        stars_balance = $3,
+        games_played = games_played + 1,
+        games_won = games_won + $4,
+        total_rake = total_rake + $5,
+        updated_at = NOW()
+       WHERE telegram_id = $1`,
+      [telegramId, balance, starsBalance, won ? 1 : 0, rakeAmount]
+    );
+    // Записываем рейк в таблицу house
+    if (rakeAmount > 0) {
+      await pool.query(
+        `INSERT INTO house (table_id, table_type, rake_amount, pot_amount) VALUES ($1, $2, $3, $4)`,
+        [tableId, tableType, rakeAmount, 0]
+      );
+    }
+  } catch (e) {
+    console.error('❌ saveBalance:', e.message);
+  }
+}
+
+// ===== BOT =====
+let bot;
+if (BOT_TOKEN) {
+  bot = new Telegraf(BOT_TOKEN);
+
+  bot.start((ctx) => {
+    ctx.reply('🃏 Добро пожаловать в Chip Poker!', {
+      reply_markup: {
+        inline_keyboard: [[{ text: '🎮 Играть', web_app: { url: `${WEBAPP_URL}/profile` } }]]
+      }
+    });
+  });
+
+  app.post('/create-invoice', async (req, res) => {
+    const { amount } = req.body;
+    try {
+      const result = await bot.telegram.createInvoiceLink(
+        `🌟 ${amount} Stars`, 'Пополнение Stars баланса в Chip Poker',
+        `stars_${Date.now()}`, '', 'XTR',
+        [{ label: `${amount} Stars`, amount }]
+      );
+      res.json({ invoiceLink: result });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  bot.on('pre_checkout_query', (ctx) => ctx.answerPreCheckoutQuery(true));
+  bot.on('successful_payment', async (ctx) => {
+    const stars = ctx.message.successful_payment.total_amount;
+    const telegramId = String(ctx.from.id);
+    try {
+      await pool.query(
+        `UPDATE players SET stars_balance = stars_balance + $2, updated_at = NOW() WHERE telegram_id = $1`,
+        [telegramId, stars]
+      );
+      ctx.reply(`✅ Получено ${stars} Stars! Зачислено на Stars баланс.`);
+    } catch(e) { ctx.reply(`✅ Получено ${stars} Stars!`); }
+  });
+
+  app.post('/webhook', (req, res) => {
+    res.sendStatus(200);
+    bot.handleUpdate(req.body).catch(err => console.error('Webhook error:', err));
+  });
+
+  bot.telegram.setWebhook(`${WEBAPP_URL}/webhook`)
+    .then(() => console.log(`🤖 Webhook установлен: ${WEBAPP_URL}/webhook`))
+    .catch(err => console.error('❌ Ошибка webhook:', err.message));
+}
+
+// ===== СТРАНИЦЫ =====
+function noCache(req, res, next) {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+}
+
+app.get('/profile', noCache, (req, res) => res.sendFile(__dirname + '/profile.html'));
+app.get('/lobby', noCache, (req, res) => res.sendFile(__dirname + '/lobby.html'));
+app.get('/game', noCache, (req, res) => res.sendFile(__dirname + '/index.html'));
+app.get('/admin', noCache, (req, res) => res.sendFile(__dirname + '/admin.html'));
+app.get('/leaderboard', noCache, (req, res) => res.sendFile(__dirname + '/leaderboard.html'));
+
+// ===== API =====
+app.get('/api/player/:telegramId', async (req, res) => {
+  try {
+    const { telegramId } = req.params;
+    const player = await pool.query('SELECT * FROM players WHERE telegram_id = $1', [telegramId]);
+    if (!player.rows[0]) return res.json({ balance: 1000, stars_balance: 0, games_played: 0, games_won: 0, rank: '—' });
+    const rankRes = await pool.query(
+      'SELECT COUNT(*) as rank FROM players WHERE balance > $1',
+      [player.rows[0].balance]
+    );
+    const rank = parseInt(rankRes.rows[0].rank) + 1;
+    res.json({ ...player.rows[0], rank });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/leaderboard', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT telegram_id, name, photo, balance, stars_balance, games_played, games_won FROM players ORDER BY balance DESC LIMIT 10'
+    );
+    res.json(result.rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/leaderboard/:telegramId', async (req, res) => {
+  try {
+    const { telegramId } = req.params;
+    const top = await pool.query(
+      'SELECT telegram_id, name, photo, balance, games_played, games_won FROM players ORDER BY balance DESC LIMIT 10'
+    );
+    const rankRes = await pool.query(
+      'SELECT COUNT(*) as rank FROM players WHERE balance > (SELECT balance FROM players WHERE telegram_id = $1)',
+      [telegramId]
+    );
+    const myRank = parseInt(rankRes.rows[0].rank) + 1;
+    const totalRes = await pool.query('SELECT COUNT(*) as total FROM players');
+    res.json({ top: top.rows, myRank, total: parseInt(totalRes.rows[0].total) });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// API проверки Stars для входа на стол
+app.post('/api/join-stars-table', async (req, res) => {
+  const { telegramId, tableConfigId } = req.body;
+  const config = TABLE_CONFIG[tableConfigId];
+  if (!config || config.type !== 'stars') return res.status(400).json({ error: 'Invalid table' });
+
+  try {
+    const player = await pool.query('SELECT stars_balance FROM players WHERE telegram_id = $1', [telegramId]);
+    if (!player.rows[0]) return res.status(404).json({ error: 'Player not found' });
+
+    const starsBalance = player.rows[0].stars_balance;
+    if (starsBalance < config.entryStars) {
+      return res.json({ ok: false, error: `Нужно ${config.entryStars} Stars`, balance: starsBalance });
+    }
+
+    // Списываем Stars за вход
+    await pool.query(
+      'UPDATE players SET stars_balance = stars_balance - $2, updated_at = NOW() WHERE telegram_id = $1',
+      [telegramId, config.entryStars]
+    );
+
+    res.json({ ok: true, entryPaid: config.entryStars });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ===== ADMIN API =====
+app.post('/admin/login', (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    res.json({ ok: true, token: Buffer.from(ADMIN_PASSWORD).toString('base64') });
+  } else {
+    res.status(401).json({ ok: false, error: 'Неверный пароль' });
+  }
+});
+
+function adminAuth(req, res, next) {
+  const token = req.headers['x-admin-token'];
+  if (token === Buffer.from(ADMIN_PASSWORD).toString('base64')) next();
+  else res.status(401).json({ error: 'Нет доступа' });
+}
+
+app.get('/admin/stats', adminAuth, async (req, res) => {
+  try {
+    const players = await pool.query('SELECT COUNT(*) as count FROM players');
+    const topPlayers = await pool.query('SELECT name, balance, stars_balance, games_played, games_won FROM players ORDER BY balance DESC LIMIT 10');
+    const totalBalance = await pool.query('SELECT SUM(balance) as total, SUM(stars_balance) as stars_total FROM players');
+    const totalRake = await pool.query('SELECT SUM(rake_amount) as total, COUNT(*) as hands FROM house');
+    const rakeToday = await pool.query(`SELECT SUM(rake_amount) as today FROM house WHERE created_at > NOW() - INTERVAL '24 hours'`);
+    const activeTables = Object.values(tables).filter(t => t.status === 'playing').length;
+    const onlinePlayers = Object.values(tables).reduce((acc, t) => acc + t.players.length, 0);
+
+    res.json({
+      totalPlayers: parseInt(players.rows[0].count),
+      topPlayers: topPlayers.rows,
+      totalChips: parseInt(totalBalance.rows[0].total) || 0,
+      totalStars: parseInt(totalBalance.rows[0].stars_total) || 0,
+      totalRake: parseInt(totalRake.rows[0].total) || 0,
+      totalHands: parseInt(totalRake.rows[0].hands) || 0,
+      rakeToday: parseInt(rakeToday.rows[0].today) || 0,
+      activeTables, onlinePlayers,
+      tables: Object.values(tables).map(t => ({
+        id: t.id, status: t.status, round: t.round, pot: t.pot,
+        tableType: t.config?.type || 'test',
+        tier: t.config?.tier || 'bronze',
+        players: t.players.map(p => ({ name: p.name, stack: p.stack }))
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/admin/players', adminAuth, async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const result = await pool.query(
+      `SELECT telegram_id, name, balance, stars_balance, games_played, games_won, total_rake, created_at
+       FROM players WHERE name ILIKE $1 OR telegram_id ILIKE $1
+       ORDER BY balance DESC LIMIT 50`,
+      [`%${search}%`]
+    );
+    res.json(result.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/admin/balance', adminAuth, async (req, res) => {
+  const { telegramId, amount, type } = req.body;
+  const field = type === 'stars' ? 'stars_balance' : 'balance';
+  try {
+    await pool.query(`UPDATE players SET ${field} = ${field} + $2, updated_at = NOW() WHERE telegram_id = $1`, [telegramId, amount]);
+    const result = await pool.query('SELECT balance, stars_balance FROM players WHERE telegram_id = $1', [telegramId]);
+    res.json({ ok: true, ...result.rows[0] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/admin/balance/set', adminAuth, async (req, res) => {
+  const { telegramId, amount, type } = req.body;
+  const field = type === 'stars' ? 'stars_balance' : 'balance';
+  try {
+    await pool.query(`UPDATE players SET ${field} = $2, updated_at = NOW() WHERE telegram_id = $1`, [telegramId, amount]);
+    res.json({ ok: true, balance: amount });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/admin/table/close', adminAuth, (req, res) => {
+  const { tableId } = req.body;
+  if (tables[tableId]) {
+    tables[tableId].status = 'waiting';
+    tables[tableId].players = [];
+    if (tables[tableId].autoStartTimer) clearTimeout(tables[tableId].autoStartTimer);
+    if (tables[tableId].nextHandTimer) clearTimeout(tables[tableId].nextHandTimer);
+    res.json({ ok: true });
+  } else {
+    res.status(404).json({ error: 'Стол не найден' });
+  }
+});
+
+// Статистика рейка для админки
+app.get('/admin/rake', adminAuth, async (req, res) => {
+  try {
+    const byType = await pool.query(`
+      SELECT table_type, SUM(rake_amount) as total, COUNT(*) as hands
+      FROM house GROUP BY table_type ORDER BY total DESC
+    `);
+    const byDay = await pool.query(`
+      SELECT DATE(created_at) as day, SUM(rake_amount) as total, COUNT(*) as hands
+      FROM house GROUP BY DATE(created_at) ORDER BY day DESC LIMIT 7
+    `);
+    res.json({ byType: byType.rows, byDay: byDay.rows });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ===== КАРТЫ =====
+function createDeck() {
+  const ranks = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+  const suits = ['hearts','diamonds','clubs','spades'];
+  const deck = [];
+  for (const suit of suits)
+    for (const rank of ranks)
+      deck.push({ rank, suit });
+  return deck;
+}
+
+function shuffle(deck) {
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+function rankToNum(r) {
+  return {'2':2,'3':3,'4':4,'5':5,'6':6,'7':7,'8':8,'9':9,'10':10,'J':11,'Q':12,'K':13,'A':14}[r];
+}
+
+function eval5(cards) {
+  const nums = cards.map(c => rankToNum(c.rank)).sort((a,b) => b-a);
+  const suits = cards.map(c => c.suit);
+  const flush = suits.every(s => s === suits[0]);
+  const counts = {};
+  nums.forEach(n => counts[n] = (counts[n]||0)+1);
+  const groups = Object.entries(counts).map(([r,c]) => ({r:+r,c})).sort((a,b) => b.c-a.c||b.r-a.r);
+  const gc = groups.map(g => g.c);
+  const gv = groups.map(g => g.r);
+  const uniq = [...new Set(nums)];
+  let straight = false, sHigh = nums[0];
+  if (uniq.length >= 5) {
+    for (let i = 0; i <= uniq.length-5; i++) {
+      if (uniq[i]-uniq[i+4] === 4) { straight = true; sHigh = uniq[i]; break; }
+    }
+    if (!straight && [14,5,4,3,2].every(v => uniq.includes(v))) { straight = true; sHigh = 5; }
+  }
+  if (straight && flush) return { rank:9, val:[sHigh], name:'Стрит-флеш' };
+  if (gc[0]===4) return { rank:8, val:gv, name:'Каре' };
+  if (gc[0]===3&&gc[1]===2) return { rank:7, val:gv, name:'Фулл-хаус' };
+  if (flush) return { rank:6, val:nums, name:'Флеш' };
+  if (straight) return { rank:5, val:[sHigh], name:'Стрит' };
+  if (gc[0]===3) return { rank:4, val:gv, name:'Тройка' };
+  if (gc[0]===2&&gc[1]===2) return { rank:3, val:gv, name:'Две пары' };
+  if (gc[0]===2) return { rank:2, val:gv, name:'Пара' };
+  return { rank:1, val:nums, name:'Старшая карта' };
+}
+
+function bestHand(cards) {
+  const result = [];
+  for (let a=0; a<cards.length-4; a++)
+    for (let b=a+1; b<cards.length-3; b++)
+      for (let c=b+1; c<cards.length-2; c++)
+        for (let d=c+1; d<cards.length-1; d++)
+          for (let e=d+1; e<cards.length; e++)
+            result.push(eval5([cards[a],cards[b],cards[c],cards[d],cards[e]]));
+  return result.reduce((best, h) => {
+    if (!best || h.rank > best.rank) return h;
+    if (h.rank === best.rank) {
+      for (let i=0; i<Math.min(h.val.length,best.val.length); i++) {
+        if (h.val[i] > best.val[i]) return h;
+        if (h.val[i] < best.val[i]) return best;
+      }
+    }
+    return best;
+  }, null);
+}
+
+// ===== СТОЛЫ =====
+const tables = {};
+
+function createTable(id, configId) {
+  const config = TABLE_CONFIG[configId] || TABLE_CONFIG.test_bronze;
+  return {
+    id, configId, config,
+    players: [], communityCards: [],
+    deck: [], deckIdx: 0, pot: 0, currentBet: 0,
+    activePlayer: 0, round: 'waiting', status: 'waiting', winner: null,
+    autoStartTimer: null, nextHandTimer: null, countdown: 0,
+  };
+}
+
+function getTable(id, configId) {
+  if (!tables[id]) tables[id] = createTable(id, configId || 'test_bronze');
+  return tables[id];
+}
+
+function nextCard(t) { return t.deck[t.deckIdx++]; }
+function activePlayers(t) { return t.players.filter(p => !p.folded && p.stack > 0); }
+
+function findNextActive(t, fromIdx) {
+  let idx = (fromIdx + 1) % t.players.length;
+  for (let i = 0; i < t.players.length; i++) {
+    if (!t.players[idx].folded && t.players[idx].stack > 0) return idx;
+    idx = (idx + 1) % t.players.length;
+  }
+  return -1;
+}
+
+function allActed(t) {
+  return t.players
+    .filter(p => !p.folded && p.stack > 0)
+    .every(p => p.hasActed && p.bet === t.currentBet || p.stack === 0 && p.hasActed);
+}
+
+function broadcastTable(t) {
+  t.players.forEach(player => {
+    const sock = io.sockets.sockets.get(player.socketId);
+    if (!sock) return;
+    sock.emit('gameState', {
+      ...t, deck: undefined, autoStartTimer: undefined, nextHandTimer: undefined,
+      players: t.players.map(p => ({
+        id: p.socketId, telegramId: p.telegramId,
+        name: p.name, photo: p.photo || null,
+        stack: p.stack, bet: p.bet, folded: p.folded,
+        cards: p.telegramId === player.telegramId
+          ? p.cards : p.cards.map(() => ({ hidden: true })),
+      }))
+    });
+  });
+}
+
+function broadcastShowdown(t) {
+  io.to(`table_${t.id}`).emit('gameState', {
+    ...t, deck: undefined, autoStartTimer: undefined, nextHandTimer: undefined,
+    players: t.players.map(p => ({
+      id: p.socketId, telegramId: p.telegramId,
+      name: p.name, photo: p.photo || null,
+      stack: p.stack, bet: p.bet, folded: p.folded, cards: p.cards,
+    }))
+  });
+}
+
+function checkAutoStart(t) {
+  if (t.autoStartTimer) { clearTimeout(t.autoStartTimer); t.autoStartTimer = null; }
+  const active = activePlayers(t);
+  if (active.length >= 2 && t.status === 'waiting') {
+    t.countdown = 3;
+    broadcastTable(t);
+    t.autoStartTimer = setTimeout(() => {
+      t.autoStartTimer = null;
+      if (activePlayers(t).length >= 2 && t.status === 'waiting') startHand(t);
+    }, 3000);
+  } else {
+    t.countdown = 0;
+    broadcastTable(t);
+  }
+}
+
+function scheduleNextHand(t) {
+  if (t.nextHandTimer) { clearTimeout(t.nextHandTimer); t.nextHandTimer = null; }
+  t.countdown = 5;
+  broadcastTable(t);
+  t.nextHandTimer = setTimeout(() => {
+    t.nextHandTimer = null;
+    if (activePlayers(t).length >= 2) startHand(t);
+    else { t.status = 'waiting'; t.countdown = 0; broadcastTable(t); }
+  }, 5000);
+}
+
+function startHand(t) {
+  t.players.forEach(p => { if (p.stack <= 0) p.stack = 1000; });
+  t.deck = shuffle(createDeck());
+  t.deckIdx = 0; t.communityCards = []; t.pot = 0; t.currentBet = 0;
+  t.status = 'playing'; t.round = 'preflop'; t.winner = null; t.countdown = 0;
+
+  t.players.forEach(p => {
+    p.cards = [nextCard(t), nextCard(t)];
+    p.bet = 0; p.folded = false; p.hasActed = false;
+  });
+
+  const active = activePlayers(t);
+  if (active.length < 2) return;
+
+  const sb = active[0], bb = active[1];
+  const sbAmt = Math.min(t.config.sb, sb.stack);
+  const bbAmt = Math.min(t.config.bb, bb.stack);
+  sb.stack -= sbAmt; sb.bet = sbAmt; t.pot += sbAmt;
+  bb.stack -= bbAmt; bb.bet = bbAmt; t.pot += bbAmt;
+  t.currentBet = bbAmt;
+  t.activePlayer = findNextActive(t, t.players.indexOf(bb));
+  broadcastTable(t);
+  console.log(`🃏 Новая раздача на столе ${t.id} (${t.configId})`);
+}
+
+function advanceRound(t) {
+  t.players.forEach(p => { p.bet = 0; p.hasActed = false; });
+  t.currentBet = 0;
+  t.activePlayer = findNextActive(t, -1);
+  if (t.round === 'preflop') {
+    t.communityCards = [nextCard(t), nextCard(t), nextCard(t)]; t.round = 'flop';
+  } else if (t.round === 'flop') {
+    t.communityCards.push(nextCard(t)); t.round = 'turn';
+  } else if (t.round === 'turn') {
+    t.communityCards.push(nextCard(t)); t.round = 'river';
+  } else if (t.round === 'river') {
+    endHand(t); return;
+  }
+  broadcastTable(t);
+}
+
+async function endHand(t) {
+  t.round = 'showdown';
+  const active = activePlayers(t);
+  let winnerPlayer = null;
+
+  // Считаем рейк
+  const rakeAmount = Math.min(Math.floor(t.pot * t.config.rake), t.config.rakeCap);
+  const potAfterRake = t.pot - rakeAmount;
+
+  if (active.length === 1) {
+    active[0].stack += potAfterRake;
+    t.winner = { name: active[0].name, handName: 'Все спасовали' };
+    winnerPlayer = active[0];
+  } else {
+    const evals = active.map(p => ({ player: p, hand: bestHand([...p.cards, ...t.communityCards]) }));
+    let best = evals[0];
+    for (const e of evals.slice(1)) {
+      if (e.hand.rank > best.hand.rank) { best = e; continue; }
+      if (e.hand.rank === best.hand.rank) {
+        for (let i=0; i<Math.min(e.hand.val.length,best.hand.val.length); i++) {
+          if (e.hand.val[i] > best.hand.val[i]) { best = e; break; }
+          if (e.hand.val[i] < best.hand.val[i]) break;
+        }
+      }
+    }
+    best.player.stack += potAfterRake;
+    t.winner = { name: best.player.name, handName: best.hand.name };
+    winnerPlayer = best.player;
+  }
+
+  // Показываем рейк в winner bar
+  t.winner.rake = rakeAmount;
+  t.status = 'finished';
+  broadcastShowdown(t);
+  console.log(`🏆 Стол ${t.id}: победил ${t.winner.name} (${t.winner.handName}) рейк: ${rakeAmount}`);
+
+  // Сохраняем балансы
+  for (const p of t.players) {
+    const isWinner = p.telegramId === winnerPlayer?.telegramId;
+    const playerRake = isWinner ? rakeAmount : 0;
+    if (t.config.type === 'stars') {
+      await saveBalance(p.telegramId, p.dbBalance || 1000, p.stack, isWinner, playerRake, t.id, t.configId);
+    } else {
+      await saveBalance(p.telegramId, p.stack, p.dbStarsBalance || 0, isWinner, playerRake, t.id, t.configId);
+    }
+  }
+
+  scheduleNextHand(t);
+}
+
+function handleAction(t, telegramId, action, amount) {
+  const idx = t.players.findIndex(p => p.telegramId === telegramId);
+  if (idx !== t.activePlayer) return;
+  const player = t.players[idx];
+
+  switch (action) {
+    case 'fold': player.folded = true; player.hasActed = true; break;
+    case 'call': {
+      const callAmt = Math.max(0, t.currentBet - player.bet);
+      const actual = Math.min(callAmt, player.stack);
+      player.stack -= actual; player.bet += actual; t.pot += actual;
+      player.hasActed = true; break;
+    }
+    case 'raise': {
+      const raiseAmt = Math.min(amount, player.stack);
+      player.stack -= raiseAmt; player.bet += raiseAmt; t.pot += raiseAmt;
+      if (player.bet > t.currentBet) {
+        t.currentBet = player.bet;
+        t.players.forEach(p => { if (p.telegramId !== telegramId && !p.folded) p.hasActed = false; });
+      }
+      player.hasActed = true; break;
+    }
+    case 'allin': {
+      const all = player.stack;
+      player.bet += all; player.stack = 0; t.pot += all;
+      if (player.bet > t.currentBet) {
+        t.currentBet = player.bet;
+        t.players.forEach(p => { if (p.telegramId !== telegramId && !p.folded) p.hasActed = false; });
+      }
+      player.hasActed = true; break;
+    }
+  }
+
+  if (t.players.filter(p => !p.folded).length === 1) { endHand(t); return; }
+  if (allActed(t)) { advanceRound(t); return; }
+  const next = findNextActive(t, idx);
+  if (next === -1) { advanceRound(t); return; }
+  t.activePlayer = next;
+  broadcastTable(t);
+}
+
+// ===== SOCKET.IO =====
+io.on('connection', (socket) => {
+  let currentTableId = null;
+  let currentTelegramId = null;
+
+  socket.on('joinTable', async ({ tableId, name, photo, telegramId, configId }) => {
+    tableId = String(tableId || '1');
+    currentTableId = tableId;
+    currentTelegramId = telegramId;
+    const t = getTable(tableId, configId);
+    socket.join(`table_${tableId}`);
+
+    t.players = t.players.filter(p => {
+      if (p.telegramId === telegramId) return true;
+      return !!io.sockets.sockets.get(p.socketId);
+    });
+
+    const existing = t.players.find(p => p.telegramId === telegramId);
+    if (existing) {
+      existing.socketId = socket.id;
+      existing.name = name || existing.name;
+      existing.photo = photo || existing.photo;
+    } else if (t.players.length < 6) {
+      const dbPlayer = await getOrCreatePlayer(telegramId, name, photo);
+      const stack = t.config.type === 'stars' ? dbPlayer.stars_balance || 0 : dbPlayer.balance || 1000;
+      t.players.push({
+        socketId: socket.id, telegramId,
+        name: name || 'Player', photo: photo || null,
+        stack,
+        dbBalance: dbPlayer.balance,
+        dbStarsBalance: dbPlayer.stars_balance,
+        cards: [], bet: 0, folded: false, hasActed: false,
+      });
+      console.log(`✅ ${name} за столом ${tableId} (${t.configId}) стек: ${stack}`);
+    }
+
+    broadcastTable(t);
+    if (t.status === 'waiting') checkAutoStart(t);
+  });
+
+  socket.on('action', ({ action, amount }) => {
+    const t = tables[currentTableId];
+    if (!t || t.status !== 'playing') return;
+    handleAction(t, currentTelegramId, action, amount || 0);
+  });
+
+  socket.on('leaveTable', () => {
+    const t = tables[currentTableId];
+    if (!t) return;
+    t.players = t.players.filter(p => p.telegramId !== currentTelegramId);
+    if (t.players.length > 0) {
+      broadcastTable(t);
+      if (activePlayers(t).length < 2 && t.status === 'playing') endHand(t);
+    } else {
+      if (t.autoStartTimer) clearTimeout(t.autoStartTimer);
+      if (t.nextHandTimer) clearTimeout(t.nextHandTimer);
+      t.status = 'waiting'; t.countdown = 0;
+    }
+  });
+
+  socket.on('disconnect', () => {
+    const t = tables[currentTableId];
+    if (!t) return;
+    const tgId = currentTelegramId;
+    setTimeout(() => {
+      const player = t.players.find(p => p.telegramId === tgId);
+      if (player && !io.sockets.sockets.get(player.socketId)) {
+        t.players = t.players.filter(p => p.telegramId !== tgId);
+        if (t.players.length > 0) {
+          broadcastTable(t);
+          if (activePlayers(t).length < 2 && t.status === 'playing') endHand(t);
+        }
+      }
+    }, 5000);
+  });
+});
+
+app.get('/tables', (req, res) => {
+  res.json(Object.values(tables).map(t => ({
+    id: t.id, configId: t.configId, config: t.config,
+    players: t.players.length, status: t.status, maxPlayers: 6,
+  })));
+});
+
+app.get('/balance/:telegramId', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM players WHERE telegram_id = $1', [req.params.telegramId]);
+    res.json(result.rows[0] || { balance: 0, stars_balance: 0 });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+initDB().then(() => {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🃏 Покер запущен на порту ${PORT}`);
+    console.log(`🌐 URL: ${WEBAPP_URL}`);
+    console.log(`🤖 Бот: @CHIP_POKER_bot`);
+  });
+});
+Что добавил:
+
+TABLE_CONFIG -- конфиг всех 6 столов (3 тестовых + 3 Stars)
+stars_balance -- отдельный баланс Stars в БД
+Рейк 3% с кэпом для каждого типа стола
+Таблица house -- хранит все рейки
+API /api/join-stars-table -- проверяет и списывает Stars за вход
+Блайнды из конфига -- 10/20, 25/50, 50/100
+Залей -- потом скину profile.html и lobby.html с двумя балансами и VIP столами!
+
+5m ago
+Первый сделал братик1m ago
+Теперь скидываю profile.html -- добавляем два баланса ⭐ и 🌟:
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Chip Poker — Profile</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js" defer></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;600;700&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+        body { background: #0a0a0f; font-family: 'Inter', sans-serif; color: white; min-height: 100vh; padding-bottom: 32px; }
+
+        .header {
+            background: rgba(0,0,0,0.6);
+            border-bottom: 1px solid rgba(212,175,55,0.15);
+            padding: 16px 20px;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .header-logo { font-family: 'Playfair Display', serif; font-size: 22px; background: linear-gradient(135deg, #f5d76e, #c9952a); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .lang-btn { background: rgba(212,175,55,0.1); border: 1px solid rgba(212,175,55,0.3); border-radius: 40px; padding: 6px 12px; font-size: 12px; font-weight: 600; color: #f5d76e; cursor: pointer; font-family: 'Inter', sans-serif; }
+
+        .lang-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 999; align-items: center; justify-content: center; }
+        .lang-overlay.open { display: flex; }
+        .lang-modal { background: rgba(10,10,20,0.98); border: 1px solid rgba(212,175,55,0.3); border-radius: 24px; padding: 24px 20px; max-width: 320px; width: 90%; }
+        .lang-modal-title { font-size: 15px; font-weight: 700; color: #f5d76e; text-align: center; margin-bottom: 16px; }
+        .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .lang-opt { background: rgba(255,255,255,0.04); border: 1px solid rgba(212,175,55,0.15); border-radius: 12px; padding: 10px 14px; font-size: 13px; color: white; cursor: pointer; font-family: 'Inter', sans-serif; text-align: left; transition: all 0.15s; }
+        .lang-opt:hover { background: rgba(212,175,55,0.1); border-color: rgba(212,175,55,0.4); }
+        .lang-opt.active { border-color: #f5d76e; color: #f5d76e; background: rgba(212,175,55,0.1); }
+
+        .content { max-width: 480px; margin: 0 auto; padding: 20px 16px; }
+
+        .profile-card {
+            background: rgba(255,255,255,0.04); border: 1px solid rgba(212,175,55,0.2);
+            border-radius: 24px; padding: 24px; text-align: center; margin-bottom: 16px;
+            position: relative; overflow: hidden;
+        }
+        .profile-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 80px;
+            background: radial-gradient(ellipse at 50% 0%, rgba(212,175,55,0.12) 0%, transparent 70%);
+        }
+        .profile-avatar {
+            width: 88px; height: 88px; border-radius: 50%;
+            background: linear-gradient(135deg, #f5d76e, #c9952a);
+            margin: 0 auto 12px; border: 3px solid rgba(212,175,55,0.4);
+            overflow: hidden; display: flex; align-items: center; justify-content: center;
+            font-size: 36px; font-weight: 700; box-shadow: 0 0 24px rgba(212,175,55,0.3);
+        }
+        .profile-name { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+        .profile-since { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 16px; }
+
+        /* ДВОЙНОЙ БАЛАНС */
+        .balance-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+
+        .balance-card {
+            border-radius: 16px; padding: 14px; text-align: center;
+        }
+        .balance-card.test {
+            background: rgba(212,175,55,0.08); border: 1px solid rgba(212,175,55,0.2);
+        }
+        .balance-card.stars {
+            background: rgba(139,92,246,0.08); border: 1px solid rgba(139,92,246,0.3);
+        }
+        .balance-card-label { font-size: 10px; color: rgba(255,255,255,0.4); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+        .balance-card-amount { font-size: 22px; font-weight: 700; line-height: 1.1; }
+        .balance-card.test .balance-card-amount { color: #f5d76e; }
+        .balance-card.stars .balance-card-amount { color: #a78bfa; }
+        .balance-rank { font-size: 12px; color: rgba(255,255,255,0.4); margin-top: 4px; text-align: center; }
+
+        .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+        .stat-item { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px 8px; text-align: center; }
+        .stat-val { font-size: 22px; font-weight: 700; color: white; }
+        .stat-lbl { font-size: 10px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+
+        .btn-lobby { width: 100%; padding: 18px; font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #f5d76e 0%, #c9952a 100%); color: #1a0a00; border: none; border-radius: 60px; cursor: pointer; letter-spacing: 0.5px; box-shadow: 0 8px 32px rgba(201,149,42,0.4); font-family: 'Inter', sans-serif; margin-bottom: 12px; transition: transform 0.08s; }
+        .btn-lobby:active { transform: scale(0.97); }
+
+        .btns-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+        .btn-action { padding: 14px; font-size: 14px; font-weight: 700; border-radius: 16px; cursor: pointer; font-family: 'Inter', sans-serif; border: none; transition: transform 0.08s; text-align: center; }
+        .btn-action:active { transform: scale(0.96); }
+        .btn-topup { background: linear-gradient(135deg, #1e3a8a, #2563eb); color: white; box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
+        .btn-withdraw { background: linear-gradient(135deg, #14532d, #22c55e); color: white; box-shadow: 0 4px 16px rgba(34,197,94,0.3); position: relative; }
+        .soon-badge { position: absolute; top: -6px; right: -6px; background: #f5d76e; color: #1a0a00; font-size: 9px; font-weight: 900; padding: 2px 6px; border-radius: 10px; }
+        .btn-rating { background: linear-gradient(135deg, #4c1d95, #7c3aed); color: white; box-shadow: 0 4px 16px rgba(124,58,237,0.3); }
+        .btn-wallet-action { background: linear-gradient(135deg, #0e4f6e, #00b4d8); color: white; box-shadow: 0 4px 20px rgba(0,180,216,0.4); border: 1px solid rgba(0,212,255,0.3); }
+        .btn-wallet-action.connected { background: linear-gradient(135deg, #064e3b, #059669); border-color: rgba(34,197,94,0.3); }
+
+        .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(34,197,94,0.9); color: white; padding: 12px 24px; border-radius: 50px; font-size: 14px; font-weight: 600; display: none; z-index: 999; white-space: nowrap; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="header-logo">♠ CHIP POKER</div>
+    <button class="lang-btn" id="langBtn" onclick="openLangModal()">🌐 RU</button>
+</div>
+
+<div class="lang-overlay" id="langOverlay" onclick="closeLangModal(event)">
+    <div class="lang-modal" onclick="event.stopPropagation()">
+        <div class="lang-modal-title" id="langModalTitle">🌐 Выберите язык</div>
+        <div class="lang-grid" id="langGrid"></div>
+    </div>
+</div>
+
+<div class="content">
+    <div class="profile-card">
+        <div class="profile-avatar" id="profileAvatar">🃏</div>
+        <div class="profile-name" id="profileName">...</div>
+        <div class="profile-since" id="profileSince"></div>
+
+        <!-- ДВОЙНОЙ БАЛАНС -->
+        <div class="balance-row">
+            <div class="balance-card test">
+                <div class="balance-card-label" id="lblTestBalance">⭐ Тестовые</div>
+                <div class="balance-card-amount">⭐ <span id="balanceTest">—</span></div>
+            </div>
+            <div class="balance-card stars">
+                <div class="balance-card-label" id="lblStarsBalance">🌟 Stars</div>
+                <div class="balance-card-amount">🌟 <span id="balanceStars">—</span></div>
+            </div>
+        </div>
+        <div class="balance-rank" id="balanceRank">Место в рейтинге: —</div>
+    </div>
+
+    <div class="stats-row">
+        <div class="stat-item">
+            <div class="stat-val" id="statGames">—</div>
+            <div class="stat-lbl" id="lblGames">Игр</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-val" id="statWins">—</div>
+            <div class="stat-lbl" id="lblWins">Побед</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-val" id="statWinRate">—</div>
+            <div class="stat-lbl" id="lblWinRate">% побед</div>
+        </div>
+    </div>
+
+    <button class="btn-lobby" id="btnLobby" onclick="window.location.href='/lobby'">🎰 В ЛОББИ</button>
+
+    <div class="btns-row">
+        <button class="btn-action btn-topup" id="btnTopup" onclick="topUp()">🌟 Пополнить Stars</button>
+        <button class="btn-action btn-withdraw" style="position:relative" id="btnWithdraw">
+            💸 Вывести
+            <span class="soon-badge" id="lblSoon">Скоро</span>
+        </button>
+    </div>
+    <div class="btns-row">
+        <button class="btn-action btn-rating" id="btnRating" onclick="window.location.href='/leaderboard'">🏆 Рейтинг</button>
+        <button class="btn-action btn-wallet-action" id="walletBtn" onclick="toggleWallet()">💎 Кошелёк</button>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    const TRANSLATIONS = {
+        ru: { flag:'🇷🇺', name:'Русский', selectLang:'🌐 Выберите язык', testBalance:'⭐ Тестовые', starsBalance:'🌟 Stars', rank:'Место в рейтинге', games:'Игр', wins:'Побед', winRate:'% побед', lobby:'🎰 В ЛОББИ', topup:'🌟 Пополнить Stars', withdraw:'💸 Вывести', soon:'Скоро', rating:'🏆 Рейтинг', wallet:'💎 Кошелёк', walletConnected:'✅ Кошелёк', since:'Играет с', disconnect:'Отключить кошелёк?' },
+        en: { flag:'🇬🇧', name:'English', selectLang:'🌐 Select language', testBalance:'⭐ Test chips', starsBalance:'🌟 Stars', rank:'Leaderboard rank', games:'Games', wins:'Wins', winRate:'Win %', lobby:'🎰 LOBBY', topup:'🌟 Top up Stars', withdraw:'💸 Withdraw', soon:'Soon', rating:'🏆 Rating', wallet:'💎 Wallet', walletConnected:'✅ Wallet', since:'Playing since', disconnect:'Disconnect wallet?' },
+        fr: { flag:'🇫🇷', name:'Français', selectLang:'🌐 Choisir la langue', testBalance:'⭐ Jetons test', starsBalance:'🌟 Stars', rank:'Classement', games:'Parties', wins:'Victoires', winRate:'% victoires', lobby:'🎰 LOBBY', topup:'🌟 Recharger Stars', withdraw:'💸 Retirer', soon:'Bientôt', rating:'🏆 Classement', wallet:'💎 Portefeuille', walletConnected:'✅ Portefeuille', since:'Joue depuis', disconnect:'Déconnecter?' },
+        es: { flag:'🇪🇸', name:'Español', selectLang:'🌐 Seleccionar idioma', testBalance:'⭐ Fichas test', starsBalance:'🌟 Stars', rank:'Clasificación', games:'Partidas', wins:'Victorias', winRate:'% victorias', lobby:'🎰 LOBBY', topup:'🌟 Recargar Stars', withdraw:'💸 Retirar', soon:'Pronto', rating:'🏆 Clasificación', wallet:'💎 Cartera', walletConnected:'✅ Cartera', since:'Jugando desde', disconnect:'¿Desconectar?' },
+        zh: { flag:'🇨🇳', name:'中文', selectLang:'🌐 选择语言', testBalance:'⭐ 测试筹码', starsBalance:'🌟 Stars', rank:'排行榜名次', games:'游戏', wins:'胜利', winRate:'胜率', lobby:'🎰 大厅', topup:'🌟 充值Stars', withdraw:'💸 提取', soon:'即将', rating:'🏆 排行榜', wallet:'💎 钱包', walletConnected:'✅ 钱包', since:'游戏时间', disconnect:'断开钱包?' },
+        hi: { flag:'🇮🇳', name:'हिन्दी', selectLang:'🌐 भाषा चुनें', testBalance:'⭐ टेस्ट चिप', starsBalance:'🌟 Stars', rank:'रैंकिंग', games:'खेल', wins:'जीत', winRate:'जीत %', lobby:'🎰 लॉबी', topup:'🌟 Stars जमा', withdraw:'💸 निकालें', soon:'जल्द', rating:'🏆 रैंकिंग', wallet:'💎 वॉलेट', walletConnected:'✅ वॉलेट', since:'से खेल रहे हैं', disconnect:'डिस्कनेक्ट?' },
+        tr: { flag:'🇹🇷', name:'Türkçe', selectLang:'🌐 Dil seçin', testBalance:'⭐ Test fişleri', starsBalance:'🌟 Stars', rank:'Sıralama', games:'Oyun', wins:'Galibiyet', winRate:'Kazanma %', lobby:'🎰 LOBİ', topup:'🌟 Stars Yükle', withdraw:'💸 Çek', soon:'Yakında', rating:'🏆 Sıralama', wallet:'💎 Cüzdan', walletConnected:'✅ Cüzdan', since:'Oyun tarihi', disconnect:'Ayır?' },
+        id: { flag:'🇮🇩', name:'Indonesia', selectLang:'🌐 Pilih bahasa', testBalance:'⭐ Chip test', starsBalance:'🌟 Stars', rank:'Peringkat', games:'Permainan', wins:'Kemenangan', winRate:'% menang', lobby:'🎰 LOBI', topup:'🌟 Isi ulang Stars', withdraw:'💸 Tarik', soon:'Segera', rating:'🏆 Peringkat', wallet:'💎 Dompet', walletConnected:'✅ Dompet', since:'Bermain sejak', disconnect:'Putuskan?' },
+    };
+
+    let currentLang = localStorage.getItem('chippoker_lang') || 'ru';
+    let T = TRANSLATIONS[currentLang] || TRANSLATIONS.ru;
+
+    function applyLang() {
+        T = TRANSLATIONS[currentLang] || TRANSLATIONS.ru;
+        document.getElementById('langBtn').innerText = `${T.flag} ${currentLang.toUpperCase()}`;
+        document.getElementById('langModalTitle').innerText = T.selectLang;
+        document.getElementById('lblTestBalance').innerText = T.testBalance;
+        document.getElementById('lblStarsBalance').innerText = T.starsBalance;
+        document.getElementById('lblGames').innerText = T.games;
+        document.getElementById('lblWins').innerText = T.wins;
+        document.getElementById('lblWinRate').innerText = T.winRate;
+        document.getElementById('btnLobby').innerText = T.lobby;
+        document.getElementById('btnTopup').innerText = T.topup;
+        document.getElementById('btnWithdraw').childNodes[0].textContent = T.withdraw + ' ';
+        document.getElementById('lblSoon').innerText = T.soon;
+        document.getElementById('btnRating').innerText = T.rating;
+        const walletBtn = document.getElementById('walletBtn');
+        walletBtn.innerText = walletBtn.classList.contains('connected') ? T.walletConnected : T.wallet;
+        renderLangGrid();
+        updateRankText();
+    }
+
+    function updateRankText() {
+        const rankEl = document.getElementById('balanceRank');
+        const rank = rankEl.dataset.rank || '—';
+        rankEl.innerText = `${T.rank}: #${rank}`;
+    }
+
+    function renderLangGrid() {
+        document.getElementById('langGrid').innerHTML = Object.entries(TRANSLATIONS).map(([code, tr]) =>
+            `<button class="lang-opt${currentLang===code?' active':''}" onclick="setLang('${code}')">${tr.flag} ${tr.name}</button>`
+        ).join('');
+    }
+
+    function setLang(lang) {
+        currentLang = lang;
+        localStorage.setItem('chippoker_lang', lang);
+        applyLang();
+        closeLangModal();
+    }
+
+    function openLangModal() { renderLangGrid(); document.getElementById('langOverlay').classList.add('open'); }
+    function closeLangModal(e) {
+        if (!e || e.target === document.getElementById('langOverlay'))
+            document.getElementById('langOverlay').classList.remove('open');
+    }
+
+    const tg = window.Telegram?.WebApp;
+    if (tg) { tg.ready(); tg.expand(); }
+
+    function parseTgUser() {
+        try {
+            const u = tg?.initDataUnsafe?.user;
+            if (u?.id) return u;
+            const raw = tg?.initData;
+            if (raw && raw.length > 0) {
+                const params = new URLSearchParams(raw);
+                const userStr = params.get('user');
+                if (userStr) return JSON.parse(decodeURIComponent(userStr));
+            }
+        } catch(e) {}
+        return null;
+    }
+
+    let myTelegramId = null;
+    let myName = 'Player';
+    let myPhoto = null;
+    let tonConnectUI = null;
+
+    const tgUser = parseTgUser();
+    if (tgUser) {
+        myTelegramId = String(tgUser.id);
+        myName = tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '');
+        myPhoto = tgUser.photo_url || null;
+    }
+
+    if (!myTelegramId) {
+        myTelegramId = localStorage.getItem('chippoker_uid');
+        if (!myTelegramId) {
+            myTelegramId = 'guest_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('chippoker_uid', myTelegramId);
+        }
+    }
+
+    document.getElementById('profileName').innerText = myName;
+    if (myPhoto) {
+        document.getElementById('profileAvatar').innerHTML =
+            `<img src="${myPhoto}" style="width:88px;height:88px;border-radius:50%;object-fit:cover">`;
+    } else {
+        document.getElementById('profileAvatar').innerText = myName[0]?.toUpperCase() || '?';
+    }
+
+    async function loadProfile() {
+        try {
+            const res = await fetch('/api/player/' + myTelegramId);
+            const data = await res.json();
+
+            document.getElementById('balanceTest').innerText = (data.balance || 0).toLocaleString();
+            document.getElementById('balanceStars').innerText = (data.stars_balance || 0).toLocaleString();
+
+            const rankEl = document.getElementById('balanceRank');
+            rankEl.dataset.rank = data.rank || '—';
+            updateRankText();
+
+            const games = data.games_played || 0;
+            const wins = data.games_won || 0;
+            const winRate = games > 0 ? Math.round(wins / games * 100) : 0;
+
+            document.getElementById('statGames').innerText = games;
+            document.getElementById('statWins').innerText = wins;
+            document.getElementById('statWinRate').innerText = winRate + '%';
+
+            if (data.created_at) {
+                const date = new Date(data.created_at);
+                document.getElementById('profileSince').innerText =
+                    T.since + ' ' + date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+            }
+        } catch(e) { console.error('loadProfile error:', e); }
+    }
+
+    function topUp() {
+        fetch('/create-invoice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: 100 })
+        })
+        .then(r => r.json())
+        .then(data => { if (data.invoiceLink && tg) tg.openInvoice(data.invoiceLink); })
+        .catch(() => showToast('⚠️ Error'));
+    }
+
+    function initTonConnect() {
+        if (tonConnectUI) return;
+        try {
+            if (typeof TON_CONNECT_UI === 'undefined') return;
+            tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+                manifestUrl: 'https://chippoker.bothost.tech/tonconnect-manifest.json',
+            });
+            tonConnectUI.onStatusChange(wallet => updateWalletBtn(wallet));
+        } catch(e) { console.warn('TON Connect error:', e); }
+    }
+
+    function updateWalletBtn(wallet) {
+        const btn = document.getElementById('walletBtn');
+        if (wallet) {
+            const addr = wallet.account.address;
+            btn.innerText = `✅ ${addr.slice(0,6)}...${addr.slice(-4)}`;
+            btn.classList.add('connected');
+        } else {
+            btn.innerText = T.wallet;
+            btn.classList.remove('connected');
+        }
+    }
+
+    function toggleWallet() {
+        initTonConnect();
+        if (!tonConnectUI) { showToast('⚠️ Loading...'); return; }
+        if (tonConnectUI.wallet) {
+            if (confirm(T.disconnect)) tonConnectUI.disconnect();
+        } else {
+            tonConnectUI.openModal();
+        }
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.innerText = msg; t.style.display = 'block';
+        setTimeout(() => t.style.display = 'none', 3000);
+    }
+
+    window.addEventListener('load', () => {
+        applyLang();
+        initTonConnect();
+        loadProfile();
+    });
+</script>
+</body>
+</html>
