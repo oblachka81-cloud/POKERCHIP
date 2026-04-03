@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chip Poker — Админ</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0f; font-family: 'Inter', sans-serif; color: white; min-height: 100vh; }
+
+        #loginScreen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at 50% 0%, #1a0a00 0%, #0a0a0f 70%); }
+        .login-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(212,175,55,0.2); border-radius: 24px; padding: 40px 32px; width: 100%; max-width: 360px; text-align: center; }
+        .login-logo { font-size: 40px; margin-bottom: 8px; }
+        .login-title { font-size: 22px; font-weight: 700; background: linear-gradient(135deg, #f5d76e, #c9952a); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 4px; }
+        .login-sub { font-size: 13px; color: rgba(255,255,255,0.4); margin-bottom: 32px; }
+        .login-input { width: 100%; padding: 14px 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(212,175,55,0.2); border-radius: 12px; color: white; font-size: 16px; font-family: 'Inter', sans-serif; outline: none; margin-bottom: 16px; letter-spacing: 2px; }
+        .login-input:focus { border-color: rgba(212,175,55,0.5); }
+        .login-btn { width: 100%; padding: 14px; background: linear-gradient(135deg, #f5d76e, #c9952a); color: #1a0a00; border: none; border-radius: 12px; font-size: 16px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; }
+        .login-error { color: #ef4444; font-size: 13px; margin-top: 12px; display: none; }
+
+        #adminPanel { display: none; }
+        .header { background: rgba(0,0,0,0.6); border-bottom: 1px solid rgba(212,175,55,0.15); padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header-title { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #f5d76e, #c9952a); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logout-btn { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'Inter', sans-serif; }
+
+        .nav-tabs { display: flex; gap: 4px; padding: 16px 24px 0; background: rgba(0,0,0,0.3); border-bottom: 1px solid rgba(255,255,255,0.06); overflow-x: auto; }
+        .nav-tab { padding: 10px 20px; border-radius: 10px 10px 0 0; font-size: 13px; font-weight: 600; cursor: pointer; color: rgba(255,255,255,0.4); border: none; background: transparent; font-family: 'Inter', sans-serif; white-space: nowrap; transition: all 0.2s; }
+        .nav-tab.active { background: rgba(212,175,55,0.1); color: #f5d76e; border-bottom: 2px solid #f5d76e; }
+        .nav-tab:hover:not(.active) { color: rgba(255,255,255,0.7); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .content { padding: 24px; max-width: 1200px; margin: 0 auto; }
+
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 28px; }
+        .stat-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(212,175,55,0.15); border-radius: 16px; padding: 18px; text-align: center; }
+        .stat-icon { font-size: 24px; margin-bottom: 6px; }
+        .stat-value { font-size: 22px; font-weight: 700; color: #f5d76e; }
+        .stat-label { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+
+        .section { margin-bottom: 28px; }
+        .section-title { font-size: 15px; font-weight: 700; color: #f5d76e; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+
+        .tables-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+        .table-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 16px; }
+        .table-card.playing { border-color: rgba(34,197,94,0.3); }
+        .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .table-id { font-weight: 700; font-size: 14px; }
+        .table-status { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 600; }
+        .status-playing { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .status-waiting { background: rgba(212,175,55,0.1); color: #f5d76e; }
+        .status-finished { background: rgba(139,92,246,0.15); color: #a78bfa; }
+        .table-player-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+        .table-pot { color: #f5d76e; font-size: 12px; margin-bottom: 8px; }
+        .close-table-btn { width: 100%; padding: 7px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; border-radius: 8px; cursor: pointer; font-size: 12px; font-family: 'Inter', sans-serif; margin-top: 8px; }
+
+        .search-row { display: flex; gap: 12px; margin-bottom: 16px; }
+        .search-input { flex: 1; padding: 11px 16px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: white; font-size: 14px; font-family: 'Inter', sans-serif; outline: none; }
+        .search-btn { padding: 11px 18px; background: rgba(212,175,55,0.15); border: 1px solid rgba(212,175,55,0.3); color: #f5d76e; border-radius: 10px; cursor: pointer; font-family: 'Inter', sans-serif; font-weight: 600; }
+        .players-table { width: 100%; border-collapse: collapse; }
+        .players-table th { text-align: left; padding: 10px 14px; font-size: 11px; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+        .players-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .players-table tr:hover td { background: rgba(255,255,255,0.03); }
+        .balance-cell { color: #f5d76e; font-weight: 700; }
+        .action-btns { display: flex; gap: 5px; flex-wrap: wrap; }
+        .add-btn { padding: 4px 10px; font-size: 11px; background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: #22c55e; border-radius: 6px; cursor: pointer; font-family: 'Inter', sans-serif; }
+        .sub-btn { padding: 4px 10px; font-size: 11px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; border-radius: 6px; cursor: pointer; font-family: 'Inter', sans-serif; }
+        .set-btn { padding: 4px 10px; font-size: 11px; background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.3); color: #a78bfa; border-radius: 6px; cursor: pointer; font-family: 'Inter', sans-serif; }
+
+        .top-list { display: flex; flex-direction: column; gap: 8px; }
+        .top-row { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 11px 14px; }
+        .top-rank { font-size: 15px; font-weight: 900; min-width: 28px; }
+        .rank-1 { color: #ffd700; } .rank-2 { color: #c0c0c0; } .rank-3 { color: #cd7f32; }
+        .top-name { flex: 1; font-size: 13px; font-weight: 600; }
+        .top-balance { color: #f5d76e; font-weight: 700; font-size: 13px; }
+        .top-games { font-size: 11px; color: rgba(255,255,255,0.4); }
+
+        .analytics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .analytics-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(212,175,55,0.15); border-radius: 16px; padding: 18px; text-align: center; }
+        .analytics-card .val { font-size: 20px; font-weight: 700; color: #f5d76e; }
+        .analytics-card .lbl { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+        .analytics-card .icon { font-size: 20px; margin-bottom: 6px; }
+
+        .chart-box { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 20px; margin-bottom: 16px; }
+        .chart-title { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.6); margin-bottom: 16px; }
+        .bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 120px; }
+        .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+        .bar { width: 100%; border-radius: 4px 4px 0 0; min-height: 2px; }
+        .bar-gold { background: linear-gradient(to top, #c9952a, #f5d76e); }
+        .bar-blue { background: linear-gradient(to top, #1d4ed8, #60a5fa); }
+        .bar-green { background: linear-gradient(to top, #15803d, #4ade80); }
+        .bar-label { font-size: 9px; color: rgba(255,255,255,0.3); text-align: center; white-space: nowrap; overflow: hidden; }
+        .bar-val { font-size: 9px; color: rgba(255,255,255,0.5); }
+
+        .hour-chart { display: flex; align-items: flex-end; gap: 3px; height: 80px; }
+        .hour-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; height: 100%; justify-content: flex-end; }
+        .hour-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 2px; background: linear-gradient(to top, #7c3aed, #a78bfa); }
+        .hour-lbl { font-size: 8px; color: rgba(255,255,255,0.3); }
+
+        .popularity-list { display: flex; flex-direction: column; gap: 8px; }
+        .pop-row { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 12px 14px; }
+        .pop-name { flex: 1; font-size: 13px; font-weight: 600; }
+        .pop-bar-wrap { flex: 2; height: 8px; background: rgba(255,255,255,0.08); border-radius: 4px; overflow: hidden; }
+        .pop-bar { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #c9952a, #f5d76e); }
+        .pop-val { font-size: 12px; color: rgba(255,255,255,0.5); min-width: 60px; text-align: right; }
+
+        .inactive-list { display: flex; flex-direction: column; gap: 6px; }
+        .inactive-row { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 10px 14px; }
+        .inactive-name { flex: 1; font-size: 13px; }
+        .inactive-time { font-size: 11px; color: rgba(239,68,68,0.7); }
+        .inactive-balance { font-size: 12px; color: #f5d76e; }
+
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } }
+
+        .toast { position: fixed; bottom: 24px; right: 24px; background: rgba(34,197,94,0.9); color: white; padding: 12px 20px; border-radius: 12px; font-size: 14px; font-weight: 600; display: none; z-index: 999; }
+        .refresh-btn { padding: 8px 14px; background: rgba(212,175,55,0.1); border: 1px solid rgba(212,175,55,0.3); color: #f5d76e; border-radius: 8px; cursor: pointer; font-size: 13px; font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body>
+
+<div id="loginScreen">
+    <div class="login-card">
+        <div class="login-logo">♠️</div>
+        <div class="login-title">Chip Poker Admin</div>
+        <div class="login-sub">Введите пароль для входа</div>
+        <input type="password" class="login-input" id="passwordInput" placeholder="Пароль" onkeydown="if(event.key==='Enter')login()">
+        <button class="login-btn" onclick="login()">Войти</button>
+        <div class="login-error" id="loginError">Неверный пароль</div>
+    </div>
+</div>
+
+<div id="adminPanel">
+    <div class="header">
+        <div class="header-title">♠ Chip Poker Admin</div>
+        <div style="display:flex;gap:10px;align-items:center">
+            <button class="refresh-btn" onclick="loadAll()">🔄 Обновить</button>
+            <button class="logout-btn" onclick="logout()">Выйти</button>
+        </div>
+    </div>
+
+    <div class="nav-tabs">
+        <button class="nav-tab active" onclick="switchTab('dashboard')">📊 Дашборд</button>
+        <button class="nav-tab" onclick="switchTab('analytics')">📈 Аналитика</button>
+        <button class="nav-tab" onclick="switchTab('players')">👥 Игроки</button>
+        <button class="nav-tab" onclick="switchTab('tables')">🎰 Столы</button>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="tab-dashboard" class="tab-content active">
+        <div class="content">
+            <div class="stats-grid">
+                <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-value" id="statPlayers">—</div><div class="stat-label">Игроков всего</div></div>
+                <div class="stat-card"><div class="stat-icon">🟢</div><div class="stat-value" id="statOnline">—</div><div class="stat-label">Онлайн сейчас</div></div>
+                <div class="stat-card"><div class="stat-icon">🎰</div><div class="stat-value" id="statTables">—</div><div class="stat-label">Активных столов</div></div>
+                <div class="stat-card"><div class="stat-icon">⭐</div><div class="stat-value" id="statChips">—</div><div class="stat-label">Фишек в игре</div></div>
+                <div class="stat-card"><div class="stat-icon">🌟</div><div class="stat-value" id="statStars">—</div><div class="stat-label">Stars в игре</div></div>
+                <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-value" id="statRake">—</div><div class="stat-label">Рейк всего</div></div>
+                <div class="stat-card"><div class="stat-icon">📅</div><div class="stat-value" id="statRakeToday">—</div><div class="stat-label">Рейк сегодня</div></div>
+                <div class="stat-card"><div class="stat-icon">🃏</div><div class="stat-value" id="statHands">—</div><div class="stat-label">Раздач всего</div></div>
+            </div>
+            <div class="section">
+                <div class="section-title">🏆 Топ игроков</div>
+                <div class="top-list" id="topList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ANALYTICS -->
+    <div id="tab-analytics" class="tab-content">
+        <div class="content">
+            <div class="section">
+                <div class="section-title">💰 Финансы</div>
+                <div class="analytics-grid">
+                    <div class="analytics-card"><div class="icon">📅</div><div class="val" id="aRakeToday">—</div><div class="lbl">Рейк сегодня</div></div>
+                    <div class="analytics-card"><div class="icon">📆</div><div class="val" id="aRakeWeek">—</div><div class="lbl">Рейк за неделю</div></div>
+                    <div class="analytics-card"><div class="icon">🗓</div><div class="val" id="aRakeMonth">—</div><div class="lbl">Рейк за месяц</div></div>
+                    <div class="analytics-card"><div class="icon">💎</div><div class="val" id="aRakeAll">—</div><div class="lbl">Рейк всего</div></div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-title">📊 Рейк по дням (30 дней)</div>
+                    <div class="bar-chart" id="rakeChart"></div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-title">🌟 Stars рейк по дням</div>
+                    <div class="bar-chart" id="starsChart"></div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">👥 Активность игроков</div>
+                <div class="analytics-grid">
+                    <div class="analytics-card"><div class="icon">🟢</div><div class="val" id="aActiveToday">—</div><div class="lbl">Активны сегодня</div></div>
+                    <div class="analytics-card"><div class="icon">📅</div><div class="val" id="aActiveWeek">—</div><div class="lbl">За неделю</div></div>
+                    <div class="analytics-card"><div class="icon">🗓</div><div class="val" id="aActiveMonth">—</div><div class="lbl">За месяц</div></div>
+                    <div class="analytics-card"><div class="icon">🔄</div><div class="val" id="aRetention">—</div><div class="lbl">Вернулись снова</div></div>
+                    <div class="analytics-card"><div class="icon">👑</div><div class="val" id="aLoyal">—</div><div class="lbl">Лояльных (10+ игр)</div></div>
+                </div>
+                <div class="two-col">
+                    <div class="chart-box">
+                        <div class="chart-title">📈 Новые игроки по дням</div>
+                        <div class="bar-chart" id="newPlayersChart"></div>
+                    </div>
+                    <div>
+                        <div class="section-title">💎 Топ по рейку</div>
+                        <div class="top-list" id="topByStarsList"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">🎰 Аналитика столов</div>
+                <div class="analytics-grid">
+                    <div class="analytics-card"><div class="icon">⚡</div><div class="val" id="aHandsPerHour">—</div><div class="lbl">Раздач в час</div></div>
+                </div>
+                <div class="two-col">
+                    <div class="chart-box">
+                        <div class="chart-title">🕐 Пиковые часы</div>
+                        <div class="hour-chart" id="peakHoursChart"></div>
+                        <div style="display:flex;justify-content:space-between;margin-top:4px">
+                            <span style="font-size:9px;color:rgba(255,255,255,0.3)">00:00</span>
+                            <span style="font-size:9px;color:rgba(255,255,255,0.3)">12:00</span>
+                            <span style="font-size:9px;color:rgba(255,255,255,0.3)">23:00</span>
+                        </div>
+                    </div>
+                    <div class="chart-box">
+                        <div class="chart-title">📅 По дням недели</div>
+                        <div class="bar-chart" id="dowChart"></div>
+                    </div>
+                </div>
+                <div class="section-title">🏅 Популярность столов</div>
+                <div class="popularity-list" id="popularityList"></div>
+            </div>
+
+            <div class="section">
+                <div class="section-title">😴 Давно не заходили (7+ дней)</div>
+                <div class="inactive-list" id="inactiveList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PLAYERS -->
+    <div id="tab-players" class="tab-content">
+        <div class="content">
+            <div class="section">
+                <div class="section-title">👥 Управление игроками</div>
+                <div class="search-row">
+                    <input type="text" class="search-input" id="searchInput" placeholder="Поиск по имени или Telegram ID..." onkeydown="if(event.key==='Enter')searchPlayers()">
+                    <button class="search-btn" onclick="searchPlayers()">🔍 Найти</button>
+                </div>
+                <div style="overflow-x:auto">
+                    <table class="players-table">
+                        <thead>
+                            <tr>
+                                <th>Имя</th>
+                                <th>Telegram ID</th>
+                                <th>Фишки</th>
+                                <th>Stars</th>
+                                <th>Игр</th>
+                                <th>Побед</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="playersBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLES -->
+    <div id="tab-tables" class="tab-content">
+        <div class="content">
+            <div class="section">
+                <div class="section-title">🎰 Активные столы</div>
+                <div class="tables-grid" id="tablesGrid">
+                    <div style="color:rgba(255,255,255,0.3);font-size:14px">Нет активных столов</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = '';
+let adminToken = localStorage.getItem('admin_token') || '';
+
+function showToast(msg, color='#22c55e') {
+    const t = document.getElementById('toast');
+    t.innerText = msg; t.style.background = color + 'ee';
+    t.style.display = 'block';
+    setTimeout(() => t.style.display = 'none', 3000);
+}
+
+function switchTab(tab) {
+    document.querySelectorAll('.nav-tab').forEach((el, i) => {
+        const tabs = ['dashboard','analytics','players','tables'];
+        el.classList.toggle('active', tabs[i] === tab);
+    });
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'analytics') loadAnalytics();
+    else if (tab === 'players') loadPlayers();
+    else if (tab === 'tables') loadStats();
+}
+
+async function login() {
+    const password = document.getElementById('passwordInput').value;
+    const res = await fetch('/admin/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password}) });
+    const data = await res.json();
+    if (data.ok) {
+        adminToken = data.token;
+        localStorage.setItem('admin_token', adminToken);
+        document.getElementById('loginScreen').style.display = 'none';
+        document.getElementById('adminPanel').style.display = 'block';
+        loadAll();
+    } else {
+        document.getElementById('loginError').style.display = 'block';
+    }
+}
+
+function logout() {
+    adminToken = '';
+    localStorage.removeItem('admin_token');
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('adminPanel').style.display = 'none';
+}
+
+async function apiGet(url) {
+    const res = await fetch(url, { headers: {'x-admin-token': adminToken} });
+    if (res.status === 401) { logout(); return null; }
+    return res.json();
+}
+
+async function apiPost(url, body) {
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json','x-admin-token':adminToken}, body:JSON.stringify(body) });
+    if (res.status === 401) { logout(); return null; }
+    return res.json();
+}
+
+async function loadAll() {
+    await loadStats();
+    await loadPlayers();
+}
+
+async function loadStats() {
+    const data = await apiGet('/admin/stats');
+    if (!data) return;
+
+    document.getElementById('statPlayers').innerText = data.totalPlayers.toLocaleString();
+    document.getElementById('statOnline').innerText = data.onlinePlayers;
+    document.getElementById('statTables').innerText = data.activeTables;
+    document.getElementById('statChips').innerText = data.totalChips.toLocaleString();
+    document.getElementById('statStars').innerText = data.totalStars.toLocaleString();
+    document.getElementById('statRake').innerText = data.totalRake.toLocaleString();
+    document.getElementById('statRakeToday').innerText = data.rakeToday.toLocaleString();
+    document.getElementById('statHands').innerText = data.totalHands.toLocaleString();
+
+    const grid = document.getElementById('tablesGrid');
+    if (!data.tables || data.tables.length === 0) {
+        grid.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:14px">Нет активных столов</div>';
+    } else {
+        grid.innerHTML = data.tables.map(t => `
+            <div class="table-card ${t.status}">
+                <div class="table-header">
+                    <div class="table-id">Стол #${t.id} <span style="font-size:11px;color:rgba(255,255,255,0.4)">${t.tableType}/${t.tier}</span></div>
+                    <div class="table-status status-${t.status}">${t.status==='playing'?'🔥 Игра':t.status==='waiting'?'⏳ Ждём':'✅ Завершён'}</div>
+                </div>
+                <div class="table-pot">🪙 Банк: ${t.pot} • ${t.round||'—'}</div>
+                ${t.players.map(p=>`<div class="table-player-row"><span>${p.name}</span><span style="color:#f5d76e">⭐ ${p.stack}</span></div>`).join('')}
+                ${t.status==='playing'?`<button class="close-table-btn" onclick="closeTable('${t.id}')">⛔ Завершить</button>`:''}
+            </div>
+        `).join('');
+    }
+
+    document.getElementById('topList').innerHTML = data.topPlayers.map((p,i) => `
+        <div class="top-row">
+            <div class="top-rank ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${i+1}`}</div>
+            <div class="top-name">${p.name}</div>
+            <div class="top-games">${p.games_played} игр</div>
+            <div class="top-balance">⭐ ${p.balance.toLocaleString()}</div>
+            <div class="top-balance" style="color:#a78bfa;margin-left:8px">🌟 ${(p.stars_balance||0).toLocaleString()}</div>
+        </div>
+    `).join('');
+}
+
+async function loadPlayers(search='') {
+    const data = await apiGet(`/admin/players?search=${encodeURIComponent(search)}`);
+    if (!data) return;
+    document.getElementById('playersBody').innerHTML = data.map(p => `
+        <tr>
+            <td>${p.name||'—'}</td>
+            <td style="font-size:11px;color:rgba(255,255,255,0.4)">${p.telegram_id}</td>
+            <td class="balance-cell">⭐ ${p.balance.toLocaleString()}</td>
+            <td style="color:#a78bfa;font-weight:700">🌟 ${(p.stars_balance||0).toLocaleString()}</td>
+            <td>${p.games_played}</td>
+            <td>${p.games_won}</td>
+            <td>
+                <div class="action-btns">
+                    <button class="add-btn" onclick="changeBalance('${p.telegram_id}','${p.name}',1)">+ Фишки</button>
+                    <button class="add-btn" style="background:rgba(139,92,246,0.15);border-color:rgba(139,92,246,0.3);color:#a78bfa" onclick="changeBalance('${p.telegram_id}','${p.name}',1,'stars')">+ Stars</button>
+                    <button class="sub-btn" onclick="changeBalance('${p.telegram_id}','${p.name}',-1)">−</button>
+                    <button class="set-btn" onclick="setBalance('${p.telegram_id}','${p.name}')">= Уст.</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function searchPlayers() {
+    loadPlayers(document.getElementById('searchInput').value);
+}
+
+async function loadAnalytics() {
+    const [finance, players, tables] = await Promise.all([
+        apiGet('/admin/analytics/finance'),
+        apiGet('/admin/analytics/players'),
+        apiGet('/admin/analytics/tables'),
+    ]);
+
+    if (finance) {
+        const p = finance.periods;
+        document.getElementById('aRakeToday').innerText = Math.round(p.today||0).toLocaleString();
+        document.getElementById('aRakeWeek').innerText = Math.round(p.week||0).toLocaleString();
+        document.getElementById('aRakeMonth').innerText = Math.round(p.month||0).toLocaleString();
+        document.getElementById('aRakeAll').innerText = Math.round(p.all_time||0).toLocaleString();
+        renderBarChart('rakeChart', finance.rakeByDay, 'rake', 'bar-gold', d => d.day?.slice(5));
+        renderBarChart('starsChart', finance.starsFlow, 'rake', 'bar-blue', d => d.day?.slice(5));
+    }
+
+    if (players) {
+        document.getElementById('aActiveToday').innerText = players.active.today;
+        document.getElementById('aActiveWeek').innerText = players.active.week;
+        document.getElementById('aActiveMonth').innerText = players.active.month;
+        const r = players.retention;
+        const retPct = r.total > 0 ? Math.round(r.returned / r.total * 100) : 0;
+        document.getElementById('aRetention').innerText = retPct + '%';
+        document.getElementById('aLoyal').innerText = r.loyal || 0;
+
+        renderBarChart('newPlayersChart', players.newByDay, 'count', 'bar-green', d => d.day?.slice(5));
+
+        document.getElementById('topByStarsList').innerHTML = players.topByStars.slice(0,5).map((p,i) => `
+            <div class="top-row">
+                <div class="top-rank ${i===0?'rank-1':i===1?'rank-2':i===2?'rank-3':''}">#${i+1}</div>
+                <div class="top-name">${p.name||'—'}</div>
+                <div class="top-games">${p.games_played} игр</div>
+                <div class="top-balance">💰 ${(p.total_rake||0).toLocaleString()}</div>
+            </div>
+        `).join('');
+
+        document.getElementById('inactiveList').innerHTML = players.inactive.length === 0
+            ? '<div style="color:rgba(255,255,255,0.3);font-size:13px">Все игроки активны!</div>'
+            : players.inactive.map(p => {
+                const days = Math.floor(parseFloat(p.last_seen||0) / 86400);
+                return `<div class="inactive-row">
+                    <div class="inactive-name">${p.name||'—'}</div>
+                    <div class="inactive-balance">⭐ ${p.balance}</div>
+                    <div class="inactive-time">Не заходил ${days} дн.</div>
+                </div>`;
+            }).join('');
+    }
+
+    if (tables) {
+        document.getElementById('aHandsPerHour').innerText = tables.avgHandsPerHour;
+
+        const hours = Array.from({length:24}, (_,i) => {
+            const found = tables.peakHours.find(h => parseInt(h.hour) === i);
+            return { hour: i, hands: found ? parseInt(found.hands) : 0 };
+        });
+        const maxH = Math.max(...hours.map(h=>h.hands), 1);
+        document.getElementById('peakHoursChart').innerHTML = hours.map(h => `
+            <div class="hour-bar-wrap">
+                <div class="hour-bar" style="height:${Math.max(2, h.hands/maxH*70)}px"></div>
+                <div class="hour-lbl">${h.hour}</div>
+            </div>
+        `).join('');
+
+        const dowNames = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+        const dowData = Array.from({length:7}, (_,i) => {
+            const found = tables.byDayOfWeek.find(d => parseInt(d.dow) === i);
+            return { dow: i, hands: found ? parseInt(found.hands) : 0 };
+        });
+        renderBarChartRaw('dowChart', dowData, 'hands', 'bar-gold', d => dowNames[d.dow]);
+
+        const tableNames = {
+            'test_bronze':'🥉 Тест Бронза','test_silver':'🥈 Тест Серебро','test_gold':'🥇 Тест Золото',
+            'stars_bronze':'🌟 Stars Бронза','stars_silver':'🌟 Stars Серебро','stars_gold':'🌟 Stars Золото',
+        };
+        const maxPop = Math.max(...tables.tablePopularity.map(t=>parseInt(t.hands)), 1);
+        document.getElementById('popularityList').innerHTML = tables.tablePopularity.map(t => `
+            <div class="pop-row">
+                <div class="pop-name">${tableNames[t.table_type]||t.table_type}</div>
+                <div class="pop-bar-wrap"><div class="pop-bar" style="width:${Math.max(2,parseInt(t.hands)/maxPop*100)}%"></div></div>
+                <div class="pop-val">${t.hands} раздач</div>
+                <div class="pop-val" style="color:#f5d76e">${parseInt(t.total_rake||0)} рейк</div>
+            </div>
+        `).join('');
+    }
+}
+
+function renderBarChart(id, data, field, cls, labelFn) {
+    renderBarChartRaw(id, data, field, cls, labelFn);
+}
+
+function renderBarChartRaw(id, data, field, cls, labelFn) {
+    const el = document.getElementById(id);
+    if (!data || data.length === 0) {
+        el.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:12px;align-self:center">Нет данных</div>';
+        return;
+    }
+    const max = Math.max(...data.map(d => parseFloat(d[field])||0), 1);
+    el.innerHTML = data.map(d => {
+        const val = parseFloat(d[field]) || 0;
+        const h = Math.max(2, val/max * 100);
+        return `<div class="bar-wrap">
+            <div class="bar-val">${val > 0 ? Math.round(val) : ''}</div>
+            <div class="bar ${cls}" style="height:${h}px"></div>
+            <div class="bar-label">${labelFn(d)}</div>
+        </div>`;
+    }).join('');
+}
+
+async function changeBalance(telegramId, name, direction, type='chips') {
+    const amtStr = prompt(`${direction>0?'Добавить':'Списать'} ${type==='stars'?'Stars':'фишек'} у ${name}:`, '100');
+    if (!amtStr || isNaN(amtStr)) return;
+    const amount = parseInt(amtStr) * direction;
+    const data = await apiPost('/admin/balance', { telegramId, amount, type: type==='stars'?'stars':'chips' });
+    if (data?.ok) {
+        showToast(`✅ Баланс ${name} обновлён`);
+        loadPlayers(document.getElementById('searchInput').value);
+        loadStats();
+    } else if (data?.error) {
+        showToast(`⚠️ ${data.error}`, '#ef4444');
+    }
+}
+
+async function setBalance(telegramId, name) {
+    const amtStr = prompt(`Установить баланс для ${name}:`, '1000');
+    if (!amtStr || isNaN(amtStr)) return;
+    const amount = parseInt(amtStr);
+    const data = await apiPost('/admin/balance/set', { telegramId, amount });
+    if (data?.ok) {
+        showToast(`✅ Баланс ${name} установлен: ⭐ ${data.balance}`);
+        loadPlayers(document.getElementById('searchInput').value);
+        loadStats();
+    }
+}
+
+async function closeTable(tableId) {
+    if (!confirm(`Завершить стол #${tableId}?`)) return;
+    const data = await apiPost('/admin/table/close', { tableId });
+    if (data?.ok) { showToast('✅ Стол завершён'); loadStats(); }
+}
+
+if (adminToken) {
+    fetch('/admin/stats', { headers: {'x-admin-token': adminToken} })
+        .then(r => {
+            if (r.ok) {
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('adminPanel').style.display = 'block';
+                loadAll();
+            }
+        });
+}
+
+setInterval(() => {
+    if (adminToken && document.getElementById('adminPanel').style.display !== 'none') {
+        loadStats();
+    }
+}, 30000);
+</script>
+</body>
+</html>
