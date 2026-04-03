@@ -1281,3 +1281,62 @@ initDB().then(() => {
     console.log(`🌐 URL: ${WEBAPP_URL}`);
     console.log(`🤖 Бот: @CHIP_POKER_bot`);
   });
+const sg = sitgoLobbies[currentSitGoId];
+    if (!sg || sg.status === 'finished') return;
+    handleSitGoAction(sg, currentTelegramId, action, amount || 0);
+  });
+
+  socket.on('leaveSitGo', () => {
+    const sg = sitgoLobbies[currentSitGoId];
+    if (!sg) return;
+    const player = sg.players.find(p => p.telegramId === currentTelegramId);
+    if (player && player.eliminated) {
+      player.socketId = null;
+    }
+  });
+
+  socket.on('disconnect', () => {
+    const t = tables[currentTableId];
+    if (t) {
+      const tgId = currentTelegramId;
+      setTimeout(() => {
+        const player = t.players.find(p => p.telegramId === tgId);
+        if (player && !io.sockets.sockets.get(player.socketId)) {
+          t.players = t.players.filter(p => p.telegramId !== tgId);
+          if (t.players.length > 0) {
+            broadcastTable(t);
+            if (activePlayers(t).length < 2 && t.status === 'playing') endHand(t);
+          } else { t.handInProgress = false; }
+        }
+      }, 5000);
+    }
+
+    const sg = sitgoLobbies[currentSitGoId];
+    if (sg) {
+      const player = sg.players.find(p => p.telegramId === currentTelegramId);
+      if (player) player.socketId = null;
+    }
+  });
+});
+
+app.get('/tables', (req, res) => {
+  res.json(Object.values(tables).map(t => ({
+    id: t.id, configId: t.configId, config: t.config,
+    players: t.players.length, status: t.status, maxPlayers: 6,
+  })));
+});
+
+app.get('/balance/:telegramId', async (req, res) => {
+  try {
+    const result = await pool.query('SELECT * FROM players WHERE telegram_id = $1', [req.params.telegramId]);
+    res.json(result.rows[0] || { balance: 0, stars_balance: 0 });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+initDB().then(() => {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🃏 Покер запущен на порту ${PORT}`);
+    console.log(`🌐 URL: ${WEBAPP_URL}`);
+    console.log(`🤖 Бот: @CHIP_POKER_bot`);
+  });
+});
