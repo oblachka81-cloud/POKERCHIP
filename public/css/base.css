@@ -1,0 +1,329 @@
+/* ============================================
+   PLANET POKER — BASE.CSS
+   Дизайн-токены, шрифты, reset, утилиты
+============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=Inter:wght@400;500;600;700&family=Bebas+Neue&display=swap');
+
+/* ---- ТОКЕНЫ ---- */
+:root {
+    /* Цвета */
+    --black: #080808;
+    --black-soft: #111111;
+    --black-card: #161616;
+    --gold: #D4AF37;
+    --gold-light: #F5E27A;
+    --gold-dark: #9C7E1A;
+    --gold-glow: rgba(212, 175, 55, 0.35);
+    --platinum: #E8E8E8;
+    --platinum-dim: #9A9A9A;
+    --green-felt: #1A4D2E;
+    --green-deep: #0D2B18;
+    --red-card: #C0392B;
+    --blue-card: #1A3A5C;
+    --danger: #E74C3C;
+    --danger-dim: rgba(231, 76, 60, 0.15);
+    --success: #27AE60;
+    --surface: rgba(255, 255, 255, 0.04);
+    --surface-mid: rgba(255, 255, 255, 0.07);
+    --border: rgba(212, 175, 55, 0.18);
+    --border-bright: rgba(212, 175, 55, 0.45);
+
+    /* Типографика */
+    --font-serif: 'Playfair Display', Georgia, serif;
+    --font-sans: 'Inter', system-ui, sans-serif;
+    --font-display: 'Bebas Neue', 'Arial Narrow', sans-serif;
+
+    /* Радиусы */
+    --r-sm: 8px;
+    --r-md: 16px;
+    --r-lg: 24px;
+    --r-xl: 36px;
+    --r-full: 9999px;
+
+    /* Тени */
+    --shadow-gold: 0 0 20px var(--gold-glow), 0 0 60px rgba(212, 175, 55, 0.1);
+    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.7);
+    --shadow-deep: 0 20px 60px rgba(0, 0, 0, 0.9);
+    --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+    /* Переходы */
+    --t-fast: 0.12s ease;
+    --t-mid: 0.25s ease;
+    --t-slow: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---- RESET ---- */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+}
+
+html {
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    height: 100%;
+    background-color: var(--black);
+    background-image: 
+        radial-gradient(ellipse at 20% 20%, rgba(212, 175, 55, 0.04) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 80%, rgba(212, 175, 55, 0.03) 0%, transparent 50%),
+        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23D4AF37' fill-opacity='0.015'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    font-family: var(--font-sans);
+    color: var(--platinum);
+    user-select: none;
+    overflow: hidden;
+}
+
+/* ---- СКРОЛЛБАР ---- */
+::-webkit-scrollbar {
+    width: 4px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--black-soft);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--gold-dark);
+    border-radius: 2px;
+}
+
+/* ---- ТИПОГРАФИКА ---- */
+.t-serif {
+    font-family: var(--font-serif);
+}
+
+.t-display {
+    font-family: var(--font-display);
+    letter-spacing: 0.05em;
+}
+
+.t-gold {
+    color: var(--gold);
+}
+
+.t-platinum {
+    color: var(--platinum);
+}
+
+.t-dim {
+    color: var(--platinum-dim);
+}
+
+.t-danger {
+    color: var(--danger);
+}
+
+/* ---- КНОПКИ ---- */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 14px;
+    border: none;
+    border-radius: var(--r-full);
+    cursor: pointer;
+    transition: transform var(--t-fast), box-shadow var(--t-fast), opacity var(--t-fast);
+    white-space: nowrap;
+}
+
+.btn:active {
+    transform: scale(0.94);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--gold-dark), var(--gold), var(--gold-light));
+    color: var(--black);
+    padding: 14px 32px;
+    font-size: 16px;
+    box-shadow: 0 4px 20px var(--gold-glow);
+}
+
+.btn-primary:hover {
+    box-shadow: var(--shadow-gold);
+}
+
+.btn-outline {
+    background: transparent;
+    border: 1px solid var(--border-bright);
+    color: var(--gold);
+    padding: 10px 20px;
+}
+
+.btn-outline:hover {
+    background: var(--surface);
+}
+
+.btn-ghost {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--platinum-dim);
+    padding: 8px 16px;
+    font-size: 12px;
+}
+
+.btn-danger {
+    background: var(--danger-dim);
+    border: 1px solid rgba(231, 76, 60, 0.3);
+    color: var(--danger);
+    padding: 8px 16px;
+    font-size: 12px;
+}
+
+/* ---- КАРТОЧКИ (поверхности) ---- */
+.card-surface {
+    background: var(--black-card);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-card), var(--shadow-inset);
+}
+
+.card-surface-glow {
+    background: var(--black-card);
+    border: 1px solid var(--border-bright);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-card), var(--shadow-inset), var(--shadow-gold);
+}
+
+/* ---- РАЗДЕЛИТЕЛЬ ---- */
+.divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-bright), transparent);
+    margin: 16px 0;
+}
+
+.divider-sm {
+    width: 60px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    margin: 8px auto;
+}
+
+/* ---- БЕЙДЖИ ---- */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: var(--r-full);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-gold {
+    background: rgba(212, 175, 55, 0.12);
+    border: 1px solid var(--border-bright);
+    color: var(--gold);
+}
+
+.badge-green {
+    background: rgba(39, 174, 96, 0.12);
+    border: 1px solid rgba(39, 174, 96, 0.35);
+    color: #2ecc71;
+}
+
+.badge-purple {
+    background: rgba(155, 89, 182, 0.12);
+    border: 1px solid rgba(155, 89, 182, 0.35);
+    color: #bb8fce;
+}
+
+.badge-red {
+    background: var(--danger-dim);
+    border: 1px solid rgba(231, 76, 60, 0.35);
+    color: var(--danger);
+}
+
+/* ---- АНИМАЦИИ ---- */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes pulse-gold {
+    0%, 100% {
+        box-shadow: 0 0 10px var(--gold-glow);
+    }
+    50% {
+        box-shadow: 0 0 30px var(--gold-glow), 0 0 60px rgba(212, 175, 55, 0.15);
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes card-in {
+    from {
+        transform: scale(0.75) rotate(-8deg);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1) rotate(0deg);
+        opacity: 1;
+    }
+}
+
+.anim-fade {
+    animation: fadeIn 0.3s ease forwards;
+}
+
+.anim-pulse {
+    animation: pulse-gold 2s ease infinite;
+}
+
+/* ---- ЛОАДЕР ---- */
+.loader {
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+/* ---- АВАТАР ---- */
+.avatar {
+    border-radius: 50%;
+    overflow: hidden;
+    background: var(--surface-mid);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: var(--gold);
+    flex-shrink: 0;
+}
+
+.avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-ring {
+    border: 2px solid var(--border);
+}
+
+.avatar-ring-gold {
+    border: 2px solid var(--gold);
+    box-shadow: 0 0 10px var(--gold-glow);
+}
